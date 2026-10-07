@@ -63,3 +63,53 @@ How I used AI tools on this project, including what I changed or rejected.
 
 **Result:** Both services live; `/health` returns 200. Documented the cold
 start and reset behaviour in README and docs/deployment.md.
+
+### [07-10-26] Session 2b: data model design and the currency decision
+
+**Tools:** Claude Code for the first data model proposal and the doc edits;
+Claude chat for design review, comparing options, and explaining trade-offs.
+
+**First proposal (Claude Code)**
+- **Prompt:** Asked for a design-only proposal of the data model, with no
+  files written.
+- **Output:** Salary stored only in local currency as integer minor units,
+  exchange rates as scaled integers, and USD conversion done in Python after
+  aggregating per currency in the database.
+- **My review:** I reviewed it with Claude chat and found the multi-currency
+  handling heavy: conversion happened in two places (Python and a SQL sort
+  expression), there was an overflow concern, and org totals could differ by
+  a few cents.
+
+**Decision: local only, USD only, or both**
+- **Prompt:** I proposed storing everything in USD only.
+- **Output:** We compared three options: A) local only, B) USD only, C) store
+  both. B has two costs: the entered number doesn't come back exactly after a
+  round trip (e.g. 1,234,567 INR becomes 1,234,566.67 INR), and changing a
+  rate would change what people appear to be paid.
+- **My decision:** C. The local amount is the source of truth for exact
+  individual figures, and a derived USD amount is used for insights and
+  comparisons.
+- **Consequences I accepted:** The USD column is derived data that can go
+  stale. So only the service writes it (it is never accepted from API input),
+  every create and update recomputes it, and a recompute script is needed if
+  a rate ever changes. Tests will check that recomputing right after seeding
+  changes zero rows.
+
+**Currency and naming**
+- **My decision:** Currency is derived from country (one fixed currency per
+  country), so the API accepts country only. Currencies: INR, USD, GBP, EUR,
+  CAD, AUD, SGD, JPY (JPY is the zero-decimal case). I renamed the salary
+  column to `annual_gross_salary_minor` so the unit is visible in the name.
+
+**Doc edits (Claude Code)**
+- **My review:** When I reviewed the doc edits Claude Code proposed, I asked
+  for these changes:
+  - keep requirements.md to one page and move detail into design-notes.md
+  - reword the average calculation so it uses the same half-even integer
+    rounding helper instead of floor division
+  - add a minimum and maximum salary check to input validation
+  - add a test that every stored currency matches its country's currency
+
+**What I'd tell a reviewer:** The design is simpler to query because of the
+stored USD copy. The price is that every write path must go through one
+conversion function.
