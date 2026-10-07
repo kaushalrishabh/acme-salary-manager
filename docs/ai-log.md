@@ -113,3 +113,55 @@ Claude chat for design review, comparing options, and explaining trade-offs.
 **What I'd tell a reviewer:** The design is simpler to query because of the
 stored USD copy. The price is that every write path must go through one
 conversion function.
+
+### 2026-10-08 Session 2c: money module (test-driven)
+
+**Tools:** Claude Code for writing the tests and the implementation; Claude
+chat for reviewing the tests and explaining the reasoning.
+
+**Tests first (Claude Code)**
+- **Prompt:** Asked Claude Code to build `app/money.py` test-first: parse a
+  major-unit string to minor units, one half-even integer rounding helper,
+  and a function that converts minor units to USD cents using a
+  scaled-integer rate. I told it to show me the failing tests before writing
+  any implementation.
+- **My review:** I reviewed the tests with Claude chat. The expected values
+  were correct, including the tie cases (0.5 cents rounds to 0, 1.5 cents
+  rounds to 2). Over two review rounds I sent back these additions: a strict
+  input format, checks that results are real ints, conversion cases that are
+  not ties, rejection of a zero or negative rate, `TypeError` for non-string
+  input, `minor_unit` limited to 0 to 3, and leading zeros allowed.
+
+**Why the strict input format**
+- `Decimal` accepts input like `"1e3"`, `"1_000"`, whitespace and non-ASCII
+  digits, and a huge exponent such as `"1e999999999"` could exhaust memory on
+  a public endpoint. So the format (ASCII digits with one optional decimal
+  point, max 40 characters) is checked with `re.fullmatch` before any
+  `Decimal` conversion.
+- **My decision:** I accepted that `"100."` and `".50"` are rejected, and that
+  `"100.00"` is accepted for JPY because it is a whole number by value.
+
+**Result**
+- Tests failed first with `ModuleNotFoundError` (expected), then 70 passed,
+  with ruff and strict mypy clean. No float, `/` or `round()` in `money.py`,
+  and the rate scale (`10**9`) is defined once.
+
+**Correction from tooling**
+- Strict mypy rejected the first implementation ("Returning Any", because
+  `10**minor_unit` is typed as `Any` when the exponent is not a literal). It
+  was fixed by moving the scale into a small typed helper that also checks
+  the 0 to 3 range.
+
+**Checking the tests catch it**
+- I changed the format check from `[0-9]` to `\d` on purpose to confirm the
+  tests would catch it. My first attempt had a typo in the decimal part of
+  the pattern, and 10 valid-amount tests failed. After fixing the edit,
+  exactly two tests failed: the Arabic-Indic and fullwidth digit cases. I
+  then reverted the change and confirmed all 70 pass again.
+
+**What I learned:** Half-even rounding stops tie-breaking errors from adding
+up in one direction across thousands of rows, and it is done on integers
+because floats cannot represent money exactly. There is also no round trip
+back from USD in this design, because the local amount is the source of
+truth. Python's `\d` matches non-ASCII digits, which is why the pattern uses
+`[0-9]`.
