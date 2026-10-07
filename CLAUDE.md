@@ -9,6 +9,15 @@ multiple countries). Replaces Excel. See docs/requirements.md (source of truth).
 - Frontend: React + TypeScript (Vite), MUI
 - Deploy: live public URL required
 
+## Commands (run from backend/)
+- Install: `uv sync`
+- Dev server: `uv run uvicorn app.main:app --reload`
+- Tests: `uv run pytest`; one test: `uv run pytest tests/test_health.py::test_health_returns_ok`
+- Pre-commit check: `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`
+
+Backend code lives in `backend/src/app`; `create_app()` in `main.py` is the
+app factory (tests build a fresh app per test via the `client` fixture).
+
 ## Architecture
 router -> service -> repository -> model. Business logic lives in services
 and must be unit-testable without HTTP or a real DB.
