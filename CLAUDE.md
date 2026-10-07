@@ -30,14 +30,27 @@ and must be unit-testable without HTTP or a real DB.
 
 ## Domain rules
 - One salary field: annual gross base, full-time. No bonus/allowances/deductions.
-- Money is integer minor units. Never float.
-- Salary stored in local currency; fixed rates in `currency_rates` to USD.
-  No live FX. Per-country insights in local currency, org-wide in USD.
+- Money is integer minor units. Never float, including FX rates and averages.
+  All rounding goes through the one half-even integer helper.
+- `annual_gross_salary_minor` (local currency) is the source of truth.
+  `annual_gross_salary_usd_cents` is derived by the service on every create
+  and update. Never accept it from API input.
+- One fixed currency per country. The API accepts country only; the service
+  derives currency from the country map. Currencies: INR, USD, GBP, EUR, CAD,
+  AUD, SGD, JPY. Fixed rates to USD in `currency_rates`. No live FX.
+- Input schemas enforce a minimum and maximum salary in major units.
+- Insights spanning more than one country (org-wide, by department, by job
+  title) aggregate the USD column in the database. Per-country insights use
+  the local column. Median is computed in the service layer.
+- Changing a rate requires running the recompute script, which refreshes
+  `annual_gross_salary_usd_cents` for every employee.
 - Employee fields: id, full_name, email (unique), job_title, department,
-  country, currency, annual_gross_salary, hire_date, created_at, updated_at.
+  country, currency (derived), annual_gross_salary_minor,
+  annual_gross_salary_usd_cents, hire_date, created_at, updated_at.
 - Insights: headcount, min, max, average, median, distribution buckets by
   country, department, job title. No AI / natural-language querying.
 - Auth: single shared HR login, credentials from env vars. No roles.
+- Full data model, conversion rules and trade-offs: docs/design-notes.md.
 
 ## Working rules
 - TDD: write the failing test first, then the code.

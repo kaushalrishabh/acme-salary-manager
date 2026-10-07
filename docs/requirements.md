@@ -12,8 +12,8 @@ HR Manager. Needs fast lookup, safe edits, and trustworthy aggregates.
 
 ### P0 (must ship)
 1. **Employee CRUD** with validation. Fields: full name, unique email, job
-   title, department, country, currency, annual gross salary, hire date.
-   Invalid input gets clear field-level errors.
+   title, department, country, annual gross salary, hire date (currency is
+   derived from the country). Invalid input gets clear field-level errors.
 2. **Find employees fast:** server-side search, filters (country, department,
    job title), sorting, pagination. Responsive at 10,000 rows.
 3. **Salary insights:** headcount, min, max, average, median, and
@@ -27,18 +27,20 @@ HR Manager. Needs fast lookup, safe edits, and trustworthy aggregates.
 CSV export, then CSV import.
 
 ## Key Decisions
-- **Salary** is one field: annual gross base, full-time. Stored as integer
-  minor units in the employee's local currency (never float).
-- **Currency:** fixed, deterministic rates in a `currency_rates` table to a
-  USD reporting currency. Same data always gives same numbers.
-- **Aggregation:** sums, min, max, and counts run in the database. Median is
-  computed in the service layer (SQLite has no percentile function).
+Data model, conversion rules and trade-offs: [design-notes.md](design-notes.md).
+
+- **Salary:** annual gross base, full-time, as integer minor units in local
+  currency (source of truth), plus a derived USD copy in cents.
+- **Currency:** one fixed currency per country, derived from the country.
+  INR, USD, GBP, EUR, CAD, AUD, SGD, JPY at fixed rates to USD; no live FX.
+- **Rate changes:** require running a recompute script for the USD copies.
+- **Aggregation:** in the database, on the USD column across countries and
+  the local column per country. Median is computed in the service layer.
 - **Pagination:** offset-based with indexed sort columns; adequate at 10k rows.
 - **Layering:** router -> service -> repository -> model, so business logic
   is unit-testable without HTTP.
-- **Auth:** one shared HR login, credentials from environment variables.
-  Reason: the app is publicly reachable with edit/delete endpoints, so a
-  minimal gate protects the demo. No user management or roles.
+- **Auth:** one shared HR login from environment variables, gating the public
+  demo's edit/delete endpoints. No user management or roles.
 - **Persistence:** SQLite for the exercise; schema stays Postgres-compatible.
 
 ## Deliberately Left Out
@@ -50,6 +52,7 @@ CSV export, then CSV import.
 | Payroll, tax | A different product: this tracks pay data, it does not run pay |
 | Role management, approvals | One persona; nobody to approve |
 | AI / natural-language querying | Fixed insight set covers the stated need; avoids accuracy risk |
+| Several currencies per country (e.g. expats paid in USD) | Keeps every per-country view in a single currency |
 
 ## Success Criteria
 - Seed completes in seconds (measured, recorded in README)
