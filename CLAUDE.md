@@ -18,6 +18,12 @@ multiple countries). Replaces Excel. See docs/requirements.md (source of truth).
 Backend code lives in `backend/src/app`; `create_app()` in `main.py` is the
 app factory (tests build a fresh app per test via the `client` fixture).
 
+## Commands (run from frontend/, Yarn 1 only, not npm)
+- Install: `yarn install`
+- Dev server: `yarn dev`
+- Tests: `yarn test` (Vitest + React Testing Library, jsdom); one file: `yarn test src/App.test.tsx`
+- Pre-commit check: `yarn lint && yarn build && yarn test` (`build` runs `tsc -b`, so it is the type check)
+
 ## Architecture
 router -> service -> repository -> model. Business logic lives in services
 and must be unit-testable without HTTP or a real DB.
