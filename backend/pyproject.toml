@@ -8,6 +8,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.142.2",
+    "sqlalchemy>=2.1.4",
     "uvicorn>=0.54.0",
 ]
 
