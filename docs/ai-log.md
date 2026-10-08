@@ -165,3 +165,45 @@ because floats cannot represent money exactly. There is also no round trip
 back from USD in this design, because the local amount is the source of
 truth. Python's `\d` matches non-ASCII digits, which is why the pattern uses
 `[0-9]`.
+
+### 2026-10-08 Session 2d: reference data module (test-driven)
+
+**Tools:** Claude Code for writing the tests and the implementation.
+
+**Tests first**
+- **Prompt:** Asked Claude Code to build `app/reference_data.py` test-first:
+  the country -> currency map for 10 countries, and a currency table with
+  `minor_unit` and `usd_rate_scaled` for the 8 supported currencies, built
+  from `RATE_SCALE` in `app.money` with no literal `10**9` and no floats.
+  Also a `RATES_AS_OF` date constant and a `RATES_NOTE` string. Told it to
+  show me the failing tests before any implementation.
+- **Output:** Tests covering: the exact country -> currency map; both maps
+  immutable; currency codes matching the 8 supported currencies; JPY at 0
+  decimal places and the rest at 2; each `usd_rate_scaled` checked against
+  its decimal rate exactly via `Fraction`, independent of the formula used to
+  derive it; round-number integration checks against `app.money.to_usd_cents`
+  that don't depend on tie-breaking; and checks on `RATES_AS_OF` and
+  `RATES_NOTE`.
+- **My review:** I asked for three more tests before implementation: pinned
+  literal values for EUR (`1_080_000_000`) and JPY (`6_700_000`), independent
+  of the `Fraction` check; country codes are 2 uppercase ASCII letters;
+  currency codes are 3 uppercase ASCII letters.
+
+**Result**
+- Tests failed first with `ModuleNotFoundError` (expected). The
+  implementation wraps both maps in `MappingProxyType` so they can't be
+  mutated, and builds every `usd_rate_scaled` from `RATE_SCALE` with integer
+  multiplication and floor division (e.g. `108 * RATE_SCALE // 100` for
+  1.08), never a literal `10**9`. All 136 tests passed, with ruff and strict
+  mypy clean. A grep for `10**9` and `float(` in the file matched only an
+  explanatory comment, not any arithmetic.
+
+**Trade-off flagged, not yet decided**
+- The two pinned literal values only hold because `RATE_SCALE` is `10**9`. If
+  `RATE_SCALE` ever changes, those two tests break even though the
+  `Fraction`-based test would still correctly confirm the rates are right.
+  Left as is, since I asked for the literals on purpose.
+
+**What I learned:** `MappingProxyType` catches accidental mutation of shared
+reference data at the point it happens, rather than as a silent bug later in
+the service or seed script.
