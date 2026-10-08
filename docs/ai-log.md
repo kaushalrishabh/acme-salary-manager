@@ -207,3 +207,65 @@ truth. Python's `\d` matches non-ASCII digits, which is why the pattern uses
 **What I learned:** `MappingProxyType` catches accidental mutation of shared
 reference data at the point it happens, rather than as a silent bug later in
 the service or seed script.
+
+### 2026-10-08 Session 2e: models and database setup (test-driven)
+
+**Tools:** Claude Code for writing the tests and the implementation.
+
+**Tests first**
+- **Prompt:** Asked Claude Code to build `app/models.py` (SQLAlchemy 2.x
+  `CurrencyRate` and `Employee` models, exactly as in design-notes.md) and
+  `app/database.py` (reads `DATABASE_URL`, defaults to a local SQLite file,
+  enables `PRAGMA foreign_keys=ON` for SQLite). Told it to use in-memory
+  SQLite and show me the failing tests before any implementation.
+- **Output:** Tests covering: `create_all` builds both tables; the
+  `currency_rates` table can be filled from `app.reference_data`; a
+  duplicate email is rejected; an unknown currency is rejected (foreign key
+  enforced); a non-positive salary is rejected; the indexes and the
+  constraint naming convention from design-notes.md exist.
+
+**Correction: an AI-written test would have failed for the wrong reason**
+- Claude Code's first draft of the `make_employee()` test helper set
+  `hire_date` to a plain string (`"2020-01-01"`). Every constraint test in
+  the file builds its employee through that one helper and only overrides
+  the field it's actually testing, so a wrong default there would have
+  broken all of them, not just a hire_date-specific test.
+- I caught this in review: SQLite's `Date` column type rejects a plain
+  string with `StatementError`, not `IntegrityError`. Since those are
+  different exception types, every `pytest.raises(IntegrityError)` in the
+  file — duplicate email, unknown currency, non-positive salary, the
+  required-field checks — would have failed, and for the wrong reason: a
+  type mismatch on a field the test wasn't even exercising, not the
+  constraint actually under test. I only learned the cause by checking it,
+  not because I already knew that distinction.
+- **My decision:** asked for `hire_date` to be a real `datetime.date` before
+  any implementation was written, with a comment in the test file explaining
+  why.
+
+**Second review round**
+- I also asked for more tests before implementation: `currency_rates`
+  rejects a `usd_rate_scaled` that is zero or negative and a `minor_unit`
+  outside 0 to 3; `employees` rejects `None` for each required column,
+  parametrized; and the duplicated currency-filling loop removed in favor of
+  reusing the `seeded_currencies` fixture, with a comment that lowercasing
+  email is the service's job, not the database's.
+
+**Result**
+- Tests failed first with `ModuleNotFoundError` (expected), then all 165
+  passed on the first implementation attempt, with ruff and strict mypy
+  clean.
+
+**Corrections from tooling (not from me)**
+- Strict mypy flagged three issues, all in the test file, none in the
+  implementation: an unused `type: ignore`; `Employee.__table__` typed as
+  the generic `FromClause` rather than `Table`, so
+  `.indexes`/`.constraints`/`.foreign_key_constraints` weren't visible
+  (fixed with two `cast(Table, ...)` aliases instead of scattered ignores);
+  and a constraint's `.name` typed as `str | Literal[_NoneName.NONE_NAME]`
+  rather than `str | None`, so an `is not None` check didn't narrow the type
+  (switched to `isinstance(name, str)`).
+
+**What I learned:** A test helper's default values matter for every test
+that reuses it, not just the one that first needed them — a wrong default
+can make a whole file of otherwise-unrelated tests fail for one shared
+reason.
