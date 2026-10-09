@@ -8,8 +8,12 @@ this file records how the backend meets it.
 
 1. Each employee's salary is stored twice: local currency in minor units
    (`annual_gross_salary_minor`, the source of truth) and a derived USD amount
-   in cents (`annual_gross_salary_usd_cents`). The service computes the USD
-   amount on every create and update. The API never accepts it as input.
+   in cents (`annual_gross_salary_usd_cents`). `app.salary.derive_salary_fields`
+   is the function that create, update and the seed generator call to derive
+   currency, convert the salary and enforce the salary limits. The recompute
+   script re-applies `to_usd_cents` directly to each employee's stored minor
+   amount; a shared helper will be factored out when that script is built.
+   The API never accepts currency or the USD amount as input.
 2. Each country has exactly one fixed currency. The API accepts the country
    only, and the service derives the currency from the country map, so a
    country/currency mismatch cannot be entered.
@@ -98,15 +102,19 @@ join a plain column join, and API responses show it.
   places than the derived currency allows (any decimals for JPY, more than 2
   for the others). It then stores the integer minor-unit amount. No `float`
   is used anywhere.
-- **Salary limits.** Input schemas enforce a minimum and a maximum salary in
-  major units, so typos like an extra zero are caught at input. The values
-  are decided when validation is built (see Open items).
+- **Salary limits.** 1 to 100,000,000 in major units, enforced by
+  `derive_salary_fields` for every caller (API, seed); the future input
+  schema mirrors the range to give field-level errors.
 - **Exchange rates** are scaled integers rather than `Numeric`. `Numeric` is
-  exact in Postgres but stored as a float in SQLite.
+  exact in Postgres but stored as a float in SQLite. Values are illustrative,
+  fixed as of 2026-10-08 (`app.reference_data.RATES_AS_OF`), not live
+  market data.
 - **Rounding** goes through one helper that divides integers with `divmod`
   and rounds half-to-even. Every rounded value uses it: conversion, averages
   and the median.
-- **Conversion** is one pure function, used by every write path:
+- **Conversion.** `app.salary.derive_salary_fields(country, amount_major)`
+  derives currency from country, parses the amount to minor units, checks
+  the salary limits, then converts to USD cents with one pure function:
 
       usd_cents = round_half_even(
           salary_minor × usd_rate_scaled × 100,
@@ -148,19 +156,27 @@ What it costs:
 
 ## Write paths
 
-All of these derive the currency from the country map and use the same
-conversion function:
+Create, update and the seed generator call `app.salary.derive_salary_fields`,
+the one function that derives currency, converts the salary and enforces
+`MIN_SALARY_MAJOR`/`MAX_SALARY_MAJOR`. The recompute script instead
+re-applies `to_usd_cents` directly to each employee's already-stored minor
+amount, since it isn't deriving currency or parsing a new amount; a shared
+helper will be extracted when that script is built.
 
 | Path | Behaviour |
 |---|---|
-| Create | Derive currency from country, convert salary, store both amounts |
-| Update | Re-derive currency and recompute the USD amount on every update, whatever fields changed |
-| Seed | Builds rows through the same derivation and conversion as the API |
-| Recompute script | Re-derives `annual_gross_salary_usd_cents` for every employee in one transaction; idempotent; reports how many rows changed |
+| Create | Call `derive_salary_fields`, store the three returned fields |
+| Update | Re-call `derive_salary_fields` on every update, whatever fields changed |
+| Seed | Calls `derive_salary_fields` for every generated employee |
+| Recompute script | Re-applies `to_usd_cents` to each stored `annual_gross_salary_minor`, refreshing `annual_gross_salary_usd_cents` for every employee in one transaction; idempotent; reports how many rows changed |
 
 The API schemas forbid unknown fields (`extra="forbid"`). A client sending
 `currency` or `annual_gross_salary_usd_cents` gets a clear validation error
 instead of having it silently ignored. Responses include both as read-only.
+
+`app.reference_data` is the single source for rates and the country/currency
+map; the `currency_rates` table is filled from it at seed time and
+refreshed by the recompute script.
 
 To change a rate: update the rate data, then run the recompute script.
 
@@ -204,21 +220,21 @@ Not indexed, on purpose:
 ## Seed script
 
 The seed is split into a pure generator,
-`generate_employees(n, seed) -> list[EmployeeCreate]`, and a thin insert step.
-It uses its own `random.Random(seed)` instance, never the global one. Names
-come from built-in word lists, not Faker, because Faker's output for a given
-seed can change between versions. Tests, in the order they'll be written:
+`generate_employees(n, seed) -> list[GeneratedEmployee]`, and a thin insert
+step. `GeneratedEmployee` is a plain dataclass, a placeholder for
+`EmployeeCreate`, which doesn't exist yet; once it does, the two should be
+reconciled. The generator uses its own `random.Random(seed)` instance, never
+the global one. Names come from built-in word lists, not Faker, because
+Faker's output for a given seed can change between versions.
 
-1. **Determinism:** the same seed gives identical output; a different seed
-   gives different output.
-2. **Validity:** every row passes the API's schema (including the salary
-   limits), and hire dates fall in a fixed range (never relative to today).
-3. **Uniqueness:** all 10,000 emails are unique.
-4. **Insert:** into in-memory SQLite gives exactly n rows; running on a
-   non-empty table inserts nothing (reseed-on-empty, see deployment.md).
-5. **Currency matches country:** after inserting, every stored `currency`
-   equals the country map's currency for that row's `country`.
-6. **No drift:** recompute straight after seeding changes zero rows.
+The job-title salary bands, country pay multipliers, and department/title
+weights are invented for this exercise, not sourced data.
+
+Tests: see `backend/tests/test_seed.py`, which covers determinism (including
+independence from the global `random` module state), email uniqueness and
+format, weighted country and department/title distribution, the fixed
+hire-date range, and that every salary round-trips through
+`derive_salary_fields` as a neat figure within the configured limits.
 
 Seed timing is measured by the script and recorded in the README, not
 asserted in tests, because timing assertions make tests flaky.
@@ -238,7 +254,4 @@ asserted in tests, because timing assertions make tests flaky.
 
 ## Open items
 
-- Exact rate values for the eight currencies, with an as-of date recorded
-  next to them.
-- Minimum and maximum salary in major units, for the input schemas.
 - Distribution bucket boundaries, for USD and for each local currency.
