@@ -356,7 +356,8 @@ itself, not just samples of it.
 **Result:** With `SEED_ON_EMPTY=true`, uvicorn logged "Seeded 10000
 employees in 0.16s" on my laptop (file database, one transaction), and a
 read-only query showed 10000 employees and 8 currency_rates. 242 tests
-pass, ruff and strict mypy clean.
+pass, ruff and strict mypy clean. On Render's free tier the log line
+reported 2.90 s.
 
 **What I learned:** A test can pass for the wrong reason, so check what
 would still pass if the feature were removed; and verify real output, not

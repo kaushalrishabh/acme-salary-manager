@@ -36,23 +36,27 @@ Free tier disks are not persistent: the file is lost whenever the service
 restarts, which happens on every redeploy and every cold start after idling.
 Any employees added or edited through the UI disappear at that point.
 
-### Planned fix: reseed on empty
+### Reseed on empty
 
-When the backend starts, it will check whether the employee table is empty.
-If it is, it will run the seed script, which creates 10,000 deterministic
-employees from a fixed seed. Every restart then comes back to the same known
-dataset, so the demo never shows an empty app.
+When `SEED_ON_EMPTY=true` and the employees table is empty, the backend
+seeds 10,000 deterministic employees at startup, before the server starts
+accepting requests. On Render's free tier this was measured at 2.90 s on
+2026-10-09; on a laptop with a file database it takes 0.16 s.
 
-This is planned and not built yet. Edits made through the UI will still be
-lost on restart. Keeping them would need a persistent database, such as a paid
-Render disk or a hosted Postgres; the schema is kept Postgres-compatible for
-that reason.
+`SEED_ON_EMPTY` is a demo-only flag set in Render's Environment settings.
+Because free-tier disks are ephemeral, edits made in the UI are lost on
+restart and the same dataset is reseeded. If someone deletes every employee
+and the app restarts, it reseeds. Keeping them would need a persistent
+database, such as a paid Render disk or a hosted Postgres; the schema is
+kept Postgres-compatible for that reason.
 
 ## Settings used
 
 **Render (backend):** Root Directory `backend` · Build
 `pip install uv && uv sync --frozen --no-dev` · Start
-`uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+`uv run --frozen --no-dev uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+(plain `uv run` re-installed the dev tools on each start). Python is pinned
+by `backend/.python-version` (3.12.15).
 
 **Vercel (frontend):** Root Directory `frontend` · Framework preset Vite ·
 Build `npm run build` · Output `dist`

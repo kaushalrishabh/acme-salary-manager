@@ -10,5 +10,7 @@ first load can take about a minute** while the Render backend wakes up from a
 cold start. Opening the health check URL first, then reloading the app, is the
 quickest way through it.
 
-The demo database also resets whenever the backend restarts, so changes made
-in the UI don't last. See [docs/deployment.md](docs/deployment.md) for details and the planned fix.
+The demo database resets whenever the backend restarts, so changes made in
+the UI don't last. It then reseeds the same 10,000 employees automatically
+(about 3 seconds on Render's free tier). See
+[docs/deployment.md](docs/deployment.md) for details.
