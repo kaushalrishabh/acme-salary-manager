@@ -9,6 +9,11 @@ RATE_SCALE = 10**9
 MAX_MINOR_UNIT = 3
 MAX_AMOUNT_LENGTH = 40
 
+# Salary limits in major units, shared by the seed generator now and the
+# input schemas later, so both enforce the same range.
+MIN_SALARY_MAJOR = 1
+MAX_SALARY_MAJOR = 100_000_000
+
 # ASCII digits with an optional single decimal point between digits.
 _AMOUNT_PATTERN = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 
