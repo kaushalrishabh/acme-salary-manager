@@ -1,6 +1,13 @@
 import pytest
 
-from app.money import InvalidAmountError, parse_major_to_minor, round_half_even, to_usd_cents
+from app.money import (
+    MAX_SALARY_MAJOR,
+    MIN_SALARY_MAJOR,
+    InvalidAmountError,
+    parse_major_to_minor,
+    round_half_even,
+    to_usd_cents,
+)
 
 # --- round_half_even ---------------------------------------------------------
 
@@ -168,3 +175,23 @@ def test_to_usd_cents_rejects_non_positive_rate(usd_rate_scaled: int) -> None:
 def test_to_usd_cents_rejects_minor_unit_outside_0_to_3(minor_unit: int) -> None:
     with pytest.raises(ValueError):
         to_usd_cents(10_000, USD_RATE, minor_unit)
+
+
+# --- salary limits ------------------------------------------------------------
+
+
+def test_min_salary_major_is_one() -> None:
+    assert MIN_SALARY_MAJOR == 1
+
+
+def test_max_salary_major_is_a_hundred_million() -> None:
+    assert MAX_SALARY_MAJOR == 100_000_000
+
+
+def test_salary_limits_are_ints_ordered_and_fit_comfortably_in_64_bits() -> None:
+    assert type(MIN_SALARY_MAJOR) is int
+    assert type(MAX_SALARY_MAJOR) is int
+    assert 0 < MIN_SALARY_MAJOR < MAX_SALARY_MAJOR
+    # The largest minor_unit is 3 decimal places; even then this must fit
+    # well inside a 64-bit signed integer (SQLAlchemy's BigInteger).
+    assert MAX_SALARY_MAJOR * 10**3 < 2**63
