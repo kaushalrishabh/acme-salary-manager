@@ -269,3 +269,95 @@ the service or seed script.
 that reuses it, not just the one that first needed them — a wrong default
 can make a whole file of otherwise-unrelated tests fail for one shared
 reason.
+
+### 2026-10-09 Session 2f: seed generator and shared salary function
+
+**Tools:** Claude Code for the design, tests and code; Claude chat for review.
+
+**Design first**
+- **Prompt:** Had Claude Code propose the seed design before writing any
+  files: 22 job titles with USD salary bands, per-country pay multipliers,
+  weighted countries, a fixed hire-date range, and emails unique by
+  construction.
+- **My review:** Reviewed the design with Claude chat and found three
+  problems: the claim that adjacent salary bands do not overlap was false
+  (Staff Engineer vs Engineering Manager, and Senior Account Executive vs
+  Sales Manager overlap); a defensive clamp that could never run, which was
+  removed in favour of a test; and a risk that Python's `random` module
+  does not guarantee identical output across versions for methods other
+  than `random()`, so no test pins a generated value.
+
+**Decision: one shared salary function**
+- The generator computed minor units and USD cents itself, which would
+  duplicate the create/update path. We added one shared function,
+  `derive_salary_fields`, used by the seed and later by the service. It
+  also enforces the salary limits (1 to 100,000,000 major units).
+
+**Test review caught a second regex mistake**
+- Test review found the email pattern used `\d`, which matches non-ASCII
+  digits; changed to `[0-9]`, the same issue as in the money module.
+
+**First run: bad data in my own name lists**
+- Tests failed on name-list entries with a space, a non-ASCII letter and a
+  hyphen. They were replaced with plain ASCII surnames, and a direct test
+  of the name lists was added.
+
+**Result:** 214 tests pass, ruff and strict mypy clean, no `float`,
+`round(` or new `10**9` literal.
+
+**What I learned:** Derived data should have one writer; test the rule
+itself, not just samples of it.
+
+### 2026-10-09 Session 2g: seeding on startup
+
+**Tools:** Claude Code for the design, tests and code; Claude chat for review.
+
+**Design first**
+- **Prompt:** Asked Claude Code for a design-only proposal first: functions
+  to fill `currency_rates`, check whether `employees` is empty, bulk insert
+  generated employees in one transaction, and seed only when the table is
+  empty; a `SEED_ON_EMPTY` environment flag read in the FastAPI lifespan,
+  off by default; and a timing script.
+
+**Review caught a test that could pass for the wrong reason (in-memory SQLite)**
+- Review with Claude chat found that the proposed lifespan test could pass
+  for the wrong reason. In-memory SQLite gives each thread its own
+  database; Claude chat reproduced this in a scratch project (a second
+  thread got "no such table"). The default database is a file on disk,
+  which tests must not touch. So
+  `create_app` takes `database_url` and `seed_count`, the engine is stored
+  on `app.state`, and the lifespan tests use a real SQLite file under
+  pytest's `tmp_path`.
+
+**A "flag off, zero rows" test alone proves nothing**
+- A test that only checks "flag off, zero rows" would still pass if the
+  lifespan never seeded at all. We added a flag-on test with
+  `seed_count=20` that expects exactly 20 rows.
+
+**Currency rates would have been silently rolled back**
+- The review also found that with the flag off, the currency rates
+  inserted at startup would be rolled back when the session closed, because
+  nothing committed them. We added an assertion that `currency_rates` holds
+  all eight currencies with the flag off, and made the lifespan commit.
+
+**A log line that wouldn't actually show under uvicorn**
+- The review found that an INFO log line from the app's own logger does
+  not show under uvicorn unless logging is configured. Claude chat
+  reproduced this in a scratch app. The caplog test would pass anyway, so
+  we configured logging at app creation, and I confirmed the real output by
+  running uvicorn myself.
+
+**A check command left a misleading empty file**
+- My first local run showed no "Seeded" line and no scratch.db file, which
+  meant the implementation had not been written yet. The empty scratch.db
+  that appeared afterwards came from the check command itself (sqlite3
+  creates a missing file), so I switched the check to read-only mode.
+
+**Result:** With `SEED_ON_EMPTY=true`, uvicorn logged "Seeded 10000
+employees in 0.16s" on my laptop (file database, one transaction), and a
+read-only query showed 10000 employees and 8 currency_rates. 242 tests
+pass, ruff and strict mypy clean.
+
+**What I learned:** A test can pass for the wrong reason, so check what
+would still pass if the feature were removed; and verify real output, not
+only test output.
