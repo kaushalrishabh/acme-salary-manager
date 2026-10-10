@@ -49,6 +49,20 @@ def parse_major_to_minor(amount: str, minor_unit: int) -> int:
     return minor
 
 
+def minor_to_major(amount_minor: int, minor_unit: int) -> str:
+    """Convert integer minor units to an exact major-unit string.
+
+    The exact inverse of parse_major_to_minor. Pure integer divmod, no
+    floats. Not defined for negative amounts: every stored salary is
+    constrained positive already.
+    """
+    scale = _minor_unit_scale(minor_unit)
+    whole, fraction = divmod(amount_minor, scale)
+    if minor_unit == 0:
+        return str(whole)
+    return f"{whole}.{fraction:0{minor_unit}d}"
+
+
 def to_usd_cents(amount_minor: int, usd_rate_scaled: int, minor_unit: int) -> int:
     """Convert a local minor-unit amount to USD cents, rounding half to even."""
     scale = _minor_unit_scale(minor_unit)
