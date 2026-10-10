@@ -24,6 +24,7 @@ from app.seed import (
     GeneratedEmployee,
     generate_employees,
 )
+from app.seeding import DEFAULT_SEED
 
 # Mirrors the neat-rounding step app.seed uses per currency, kept local so
 # this test doesn't just restate the implementation's own constant.
@@ -263,3 +264,16 @@ def test_salary_ordering_is_preserved_within_a_country_across_seniority(
         ]
         if juniors and managers:
             assert max(juniors) <= min(managers)
+
+
+def test_all_10000_emails_from_the_real_default_seed_are_lowercase() -> None:
+    # Verifies the actual production seed (n=10,000, DEFAULT_SEED), not a
+    # smaller sample: every email must be exactly its own lowercase form.
+    # This matters because case-insensitive duplicate-email detection
+    # (EmployeeService) relies entirely on every stored email already being
+    # lowercase -- SQLite's own unique constraint on email is case-sensitive
+    # (see test_models.py), so a seed that produced mixed-case emails could
+    # silently violate the uniqueness guarantee the service assumes.
+    employees = generate_employees(10_000, seed=DEFAULT_SEED)
+    for employee in employees:
+        assert employee.email == employee.email.lower(), employee.email

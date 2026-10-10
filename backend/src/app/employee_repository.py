@@ -83,7 +83,16 @@ class EmployeeRepository:
         return self.session.get(Employee, employee_id)
 
     def get_by_email(self, email: str) -> Employee | None:
-        """Exact, case-sensitive match only; lowercasing is the service's job."""
+        """Exact, case-sensitive match only; lowercasing is the service's job.
+
+        Case-insensitive duplicate-email detection depends entirely on
+        every caller storing a lowercased email: the column's unique
+        constraint is SQLite's default case-sensitive TEXT comparison, so
+        "Ada@x.com" and "ada@x.com" are two different rows as far as the
+        database is concerned (see test_models.py's
+        test_the_unique_constraint_itself_is_case_sensitive). A caller that
+        skips lowercasing can silently defeat uniqueness.
+        """
         return self.session.execute(
             select(Employee).where(Employee.email == email)
         ).scalar_one_or_none()

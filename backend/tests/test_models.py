@@ -108,6 +108,21 @@ def test_duplicate_email_is_rejected(seeded_currencies: Session) -> None:
         seeded_currencies.commit()
 
 
+def test_the_unique_constraint_itself_is_case_sensitive(seeded_currencies: Session) -> None:
+    # Documents why the lowercase-before-save invariant is load-bearing:
+    # SQLite's default TEXT comparison (and this column's unique constraint)
+    # is case-sensitive, so "Dup@Example.com" and "dup@example.com" are two
+    # different strings as far as the database is concerned, and BOTH
+    # inserts succeed here. Case-insensitive uniqueness exists only because
+    # every caller is expected to lowercase email before it reaches this
+    # table (EmployeeService does; nothing in the schema enforces it).
+    seeded_currencies.add(make_employee(email="dup@example.com"))
+    seeded_currencies.add(make_employee(email="Dup@Example.com", full_name="Grace Hopper"))
+    seeded_currencies.commit()  # must not raise
+
+    assert seeded_currencies.query(Employee).count() == 2
+
+
 def test_unknown_currency_is_rejected(seeded_currencies: Session) -> None:
     seeded_currencies.add(make_employee(country="US", currency="ZZZ"))
     with pytest.raises(IntegrityError):
