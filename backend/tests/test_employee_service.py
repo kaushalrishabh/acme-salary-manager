@@ -13,9 +13,11 @@ from sqlalchemy.orm import Session
 from app.database import create_app_engine
 from app.employee_repository import EmployeeFilters
 from app.employee_service import EmployeeService
-from app.errors import NotFoundError
+from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base, Employee
+from app.money import minor_to_major
 from app.salary import derive_salary_fields
+from app.schemas import EmployeeCreate, EmployeeUpdate
 from app.seeding import ensure_currency_rates
 
 
@@ -159,3 +161,135 @@ def test_get_options_returns_distinct_values(session: Session, service: Employee
     assert options.countries == ["IN", "US"]
     assert options.departments == ["Engineering", "Sales"]
     assert options.job_titles == ["Engineer", "Sales Manager"]
+
+
+def _create_data(**overrides: object) -> EmployeeCreate:
+    defaults: dict[str, object] = {
+        "full_name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "job_title": "Engineer",
+        "department": "Engineering",
+        "country": "US",
+        "annual_gross_salary": "70000",
+        "hire_date": date(2020, 1, 1),
+    }
+    defaults.update(overrides)
+    return EmployeeCreate(**defaults)  # type: ignore[arg-type]
+
+
+def _update_data(**overrides: object) -> EmployeeUpdate:
+    defaults: dict[str, object] = {
+        "full_name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "job_title": "Engineer",
+        "department": "Engineering",
+        "country": "US",
+        "annual_gross_salary": "70000",
+        "hire_date": date(2020, 1, 1),
+    }
+    defaults.update(overrides)
+    return EmployeeUpdate(**defaults)  # type: ignore[arg-type]
+
+
+# --- create_employee ---------------------------------------------------------------
+
+
+def test_create_employee_derives_money_fields_through_derive_salary_fields(
+    service: EmployeeService,
+) -> None:
+    result = service.create_employee(_create_data(country="JP", annual_gross_salary="5000000"))
+
+    expected = derive_salary_fields("JP", "5000000")
+    assert result.currency == "JPY"
+    assert result.annual_gross_salary == "5000000"
+    assert result.annual_gross_salary_usd == minor_to_major(
+        expected.annual_gross_salary_usd_cents, 2
+    )
+
+
+def test_create_employee_trims_and_lowercases_email(service: EmployeeService) -> None:
+    result = service.create_employee(_create_data(email="  Ada@Example.COM  "))
+
+    assert result.email == "ada@example.com"
+
+
+def test_create_employee_raises_duplicate_email_error_case_insensitively(
+    session: Session, service: EmployeeService
+) -> None:
+    make_employee(session, email="ada@example.com")
+
+    with pytest.raises(DuplicateEmailError):
+        service.create_employee(_create_data(email="ADA@example.com"))
+
+
+def test_create_employee_raises_field_validation_error_for_an_unsupported_country(
+    service: EmployeeService,
+) -> None:
+    with pytest.raises(FieldValidationError) as exc_info:
+        service.create_employee(_create_data(country="ZZ"))
+
+    assert exc_info.value.field == "country"
+
+
+def test_create_employee_raises_field_validation_error_for_a_malformed_amount(
+    service: EmployeeService,
+) -> None:
+    with pytest.raises(FieldValidationError) as exc_info:
+        service.create_employee(_create_data(annual_gross_salary="not-a-number"))
+
+    assert exc_info.value.field == "annual_gross_salary"
+
+
+# --- update_employee ----------------------------------------------------------------
+
+
+def test_update_employee_recomputes_money_fields_even_when_only_country_changed(
+    service: EmployeeService,
+) -> None:
+    created = service.create_employee(_create_data(country="US", annual_gross_salary="70000"))
+
+    updated = service.update_employee(
+        created.id, _update_data(country="JP", annual_gross_salary="70000")
+    )
+
+    expected = derive_salary_fields("JP", "70000")
+    assert updated.currency == "JPY"
+    assert updated.annual_gross_salary == "70000"
+    assert updated.annual_gross_salary_usd == minor_to_major(
+        expected.annual_gross_salary_usd_cents, 2
+    )
+
+
+def test_update_employee_raises_not_found_for_a_missing_id(service: EmployeeService) -> None:
+    with pytest.raises(NotFoundError):
+        service.update_employee(999_999, _update_data())
+
+
+def test_update_employee_does_not_raise_duplicate_for_its_own_unchanged_email(
+    service: EmployeeService,
+) -> None:
+    created = service.create_employee(_create_data(email="ada@example.com"))
+
+    result = service.update_employee(
+        created.id, _update_data(email="ada@example.com", full_name="Ada L.")
+    )
+
+    assert result.full_name == "Ada L."
+
+
+def test_update_employee_raises_duplicate_for_a_different_employees_email(
+    session: Session, service: EmployeeService
+) -> None:
+    make_employee(session, email="other@example.com")
+    created = service.create_employee(_create_data(email="ada@example.com"))
+
+    with pytest.raises(DuplicateEmailError):
+        service.update_employee(created.id, _update_data(email="other@example.com"))
+
+
+# --- delete_employee ----------------------------------------------------------------
+
+
+def test_delete_employee_raises_not_found_for_a_missing_id(service: EmployeeService) -> None:
+    with pytest.raises(NotFoundError):
+        service.delete_employee(999_999)
