@@ -1,11 +1,13 @@
 """Pure data access for employees: list (filter, search, sort, paginate),
-get, and options. No business logic, no HTTP awareness. Methods do not
-commit; this repository only ever reads.
+get, options, and the write operations (create, get_by_email, update,
+delete). No business logic, no HTTP awareness. No method commits -- the
+service decides the transaction boundary.
 """
 
 from __future__ import annotations  # ColumnElement[bool] is stub-only generic at runtime
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.orm import Session
@@ -79,6 +81,28 @@ class EmployeeRepository:
 
     def get(self, employee_id: int) -> Employee | None:
         return self.session.get(Employee, employee_id)
+
+    def get_by_email(self, email: str) -> Employee | None:
+        """Exact, case-sensitive match only; lowercasing is the service's job."""
+        return self.session.execute(
+            select(Employee).where(Employee.email == email)
+        ).scalar_one_or_none()
+
+    def create(self, values: dict[str, Any]) -> Employee:
+        """Stage a new row. Does not flush or commit."""
+        employee = Employee(**values)
+        self.session.add(employee)
+        return employee
+
+    def update(self, employee: Employee, values: dict[str, Any]) -> Employee:
+        """Mutate an already-fetched row in place. Does not flush or commit."""
+        for key, value in values.items():
+            setattr(employee, key, value)
+        return employee
+
+    def delete(self, employee: Employee) -> None:
+        """Stage a deletion. Does not flush or commit."""
+        self.session.delete(employee)
 
     def options(self) -> EmployeeOptions:
         countries = sorted(self.session.scalars(select(Employee.country).distinct()))
