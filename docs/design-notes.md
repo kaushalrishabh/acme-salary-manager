@@ -305,6 +305,55 @@ so far:
   across every sort field and both orders, responds in 2-4ms (well under
   the 500ms success criterion in requirements.md).
 
+### Slice 2: writes
+
+- **`app.salary.derive_salary_fields` is the single conversion point for
+  create and update, same as the seed generator.** Country and salary
+  format/limits are enforced there, not duplicated in the Pydantic schemas;
+  `EmployeeCreate`/`EmployeeUpdate` hold structural rules only (types,
+  length bounds, `extra="forbid"`).
+- **Exception mapping:** `InvalidAmountError` (malformed amount or outside
+  `MIN_SALARY_MAJOR`/`MAX_SALARY_MAJOR`) is caught *before* plain
+  `ValueError` (unsupported country) -- it's a `ValueError` subclass, so
+  order matters. Both become `FieldValidationError`, on `annual_gross_salary`
+  and `country` respectively, which a registered handler turns into a 422
+  matching Pydantic's own per-field shape
+  (`{"detail": [{"loc": ["body", field], "msg": ..., "type": "value_error"}]}`).
+- **Commit boundary:** the repository never commits -- `create`/`update`/
+  `delete` only stage changes (`session.add`, attribute mutation,
+  `session.delete`). The service commits once per write, catching
+  `IntegrityError` on that commit as a last-resort guard for a race between
+  the pre-commit duplicate-email check and a concurrent request, and
+  raising `DuplicateEmailError`. Verified with a forced race (the pre-check
+  mocked to see no conflict while a real duplicate already exists): the
+  response is 409, not 500.
+- **Email:** trimmed and lowercased by the service before both the
+  uniqueness check and storage, so duplicates are caught case-insensitively
+  even though the repository's own `get_by_email` is an exact, case-sensitive
+  match (lowercasing is explicitly the service's job, not the repository's).
+- **Update always re-derives both money fields,** even when only `country`
+  changed and the salary string is textually identical -- the same number
+  means a different real salary in a different currency. The email-collision
+  check on update excludes the row being updated, so saving without changing
+  email never 409s against itself.
+- **Mutation-checked, not just written:** the case-insensitive duplicate
+  test was confirmed to fail when lowercasing was removed (without it,
+  neither the pre-check nor the DB's case-sensitive unique constraint would
+  catch the duplicate); the self-exclusion test was confirmed to fail when
+  the `existing.id != employee_id` exclusion was removed, with the sibling
+  "different employee" test still correctly passing either way.
+- **Manually round-tripped** against a seeded 10,000-row DB with a JPY
+  employee: POST "6500000" JPY → `annual_gross_salary: "6500000"`,
+  `annual_gross_salary_usd: "43550.00"`; PUT changing only `country` to US
+  with the same salary string → `annual_gross_salary: "6500000.00"`,
+  `annual_gross_salary_usd: "6500000.00"` -- the same literal number now
+  means a completely different real salary. DELETE → 204, then GET → 404.
+- **Writes are unprotected.** `Depends(require_auth)` does not exist yet
+  (Slice 4). `POST`/`PUT`/`DELETE` on `/employees` currently have no auth
+  check at all. **Do not deploy this slice's backend to Render before
+  Slice 4 ships** -- the live URL is public, and every write endpoint is
+  open to anyone until then.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
