@@ -287,12 +287,20 @@ so far:
   indexed (see Indexes, above) -- a leading-wildcard `LIKE` can't use a
   B-tree index regardless of engine.
 - **Confirming the list query is indexed, at 10,000 rows:** `EXPLAIN QUERY
-  PLAN` on a filtered, sorted page must contain a `SEARCH employees USING
-  INDEX` line, and must not contain a bare `SCAN employees` line (one
-  without `USING INDEX`). The temp B-tree SQLite adds for `ORDER BY` is
+  PLAN` on a filtered, sorted page must contain
+  `SEARCH employees USING INDEX ix_employees_country` -- the exact index
+  name, not just the word "SEARCH". Without the country index, SQLite
+  doesn't fall back to a bare scan; it walks the table via whichever *other*
+  index satisfies the `ORDER BY` instead (`SCAN employees USING INDEX
+  ix_employees_full_name`, filtering `country` as a residual check) -- still
+  O(n), but easy to mistake for "an index is being used" if the assertion
+  only checks for the word "SEARCH" or the presence of some index. The temp
+  B-tree SQLite adds for `ORDER BY` when the country index *is* present is
   accepted as-is; no composite index was added to remove it. Verified by
-  mutation: temporarily dropping the `country` index made the assertion
-  fail, confirming the test isn't a tautology, before reverting.
+  mutation twice: dropping the `country` index first exposed that one test
+  (a timing smoke test with no plan assertion at all) stayed green through
+  the disguised scan; after tightening every test to require the specific
+  index name, the same mutation made all of them fail, before reverting.
 - **Measured at 10,000 rows:** `GET /employees` with a country filter,
   across every sort field and both orders, responds in 2-4ms (well under
   the 500ms success criterion in requirements.md).
