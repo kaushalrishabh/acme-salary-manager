@@ -351,3 +351,106 @@ def test_options_returns_distinct_sorted_values(session: Session, repo: Employee
     assert options.countries == ["IN", "US"]
     assert options.departments == ["Engineering", "Sales"]
     assert options.job_titles == ["Engineer", "Sales Manager"]
+
+
+# --- create ----------------------------------------------------------------------
+
+
+def test_create_persists_all_fields_including_derived_money_columns(
+    session: Session, repo: EmployeeRepository
+) -> None:
+    fields = derive_salary_fields("US", "85000.50")
+
+    created = repo.create(
+        {
+            "full_name": "Ada Lovelace",
+            "email": "ada@example.com",
+            "job_title": "Engineer",
+            "department": "Engineering",
+            "country": "US",
+            "currency": fields.currency,
+            "annual_gross_salary_minor": fields.annual_gross_salary_minor,
+            "annual_gross_salary_usd_cents": fields.annual_gross_salary_usd_cents,
+            "hire_date": date(2020, 1, 1),
+        }
+    )
+    session.commit()
+
+    fetched = repo.get(created.id)
+    assert fetched is not None
+    assert fetched.full_name == "Ada Lovelace"
+    assert fetched.email == "ada@example.com"
+    assert fetched.job_title == "Engineer"
+    assert fetched.department == "Engineering"
+    assert fetched.country == "US"
+    assert fetched.currency == "USD"
+    assert fetched.annual_gross_salary_minor == fields.annual_gross_salary_minor
+    assert fetched.annual_gross_salary_usd_cents == fields.annual_gross_salary_usd_cents
+    assert fetched.hire_date == date(2020, 1, 1)
+
+
+# --- get_by_email ------------------------------------------------------------------
+
+
+def test_get_by_email_finds_a_case_exact_match(session: Session, repo: EmployeeRepository) -> None:
+    make_employee(session, email="ada@example.com")
+
+    assert repo.get_by_email("ada@example.com") is not None
+    # Case-insensitive matching is the service's job, not this method's.
+    assert repo.get_by_email("ADA@EXAMPLE.COM") is None
+
+
+def test_get_by_email_returns_none_when_not_found(repo: EmployeeRepository) -> None:
+    assert repo.get_by_email("nobody@example.com") is None
+
+
+# --- update ------------------------------------------------------------------------
+
+
+def test_update_changes_every_field_including_currency_when_country_changes(
+    session: Session, repo: EmployeeRepository
+) -> None:
+    employee = make_employee(session, country="US", salary_major="70000", email="a@example.com")
+    new_fields = derive_salary_fields("IN", "1000000")
+
+    repo.update(
+        employee,
+        {
+            "full_name": "New Name",
+            "email": "b@example.com",
+            "job_title": "Senior Engineer",
+            "department": "Sales",
+            "country": "IN",
+            "currency": new_fields.currency,
+            "annual_gross_salary_minor": new_fields.annual_gross_salary_minor,
+            "annual_gross_salary_usd_cents": new_fields.annual_gross_salary_usd_cents,
+            "hire_date": date(2021, 5, 5),
+        },
+    )
+    session.commit()
+
+    fetched = repo.get(employee.id)
+    assert fetched is not None
+    assert fetched.full_name == "New Name"
+    assert fetched.email == "b@example.com"
+    assert fetched.job_title == "Senior Engineer"
+    assert fetched.department == "Sales"
+    assert fetched.country == "IN"
+    assert fetched.currency == "INR"
+    assert fetched.annual_gross_salary_minor == new_fields.annual_gross_salary_minor
+    assert fetched.annual_gross_salary_usd_cents == new_fields.annual_gross_salary_usd_cents
+    assert fetched.hire_date == date(2021, 5, 5)
+
+
+# --- delete ------------------------------------------------------------------------
+
+
+def test_delete_removes_the_row_and_a_second_get_returns_none(
+    session: Session, repo: EmployeeRepository
+) -> None:
+    employee = make_employee(session, email="x@example.com")
+
+    repo.delete(employee)
+    session.commit()
+
+    assert repo.get(employee.id) is None
