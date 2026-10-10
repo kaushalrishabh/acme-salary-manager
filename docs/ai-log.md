@@ -362,3 +362,97 @@ reported 2.90 s.
 **What I learned:** A test can pass for the wrong reason, so check what
 would still pass if the feature were removed; and verify real output, not
 only test output.
+
+### 2026-10-10 Session 3: Employees API, Slice 1 (list) and Slice 2 (writes)
+
+**Tools:** Claude Code for the design proposal and all implementation.
+Claude (claude.ai chat) for an independent review of the design and of each
+slice report.
+
+**Design first**
+- Asked Claude Code for a complete API contract and internal design
+  (router/service/repository split, Pydantic schemas, endpoint shapes, the
+  exact test list per slice) before any code, so I could review the whole
+  shape once and then build it slice by slice.
+- Had the design reviewed separately in a Claude chat, which ran scratch
+  checks against real behaviour rather than just reading it. That review
+  found three defects in the proposal:
+  1. The EXPLAIN QUERY PLAN test asserted `"SCAN TABLE employees" not in
+     plan_text`, but SQLite 3.36+ prints `SCAN employees`, so the assertion
+     could never fail.
+  2. The login check joined two `hmac.compare_digest` calls with `and`,
+     which short-circuits and leaks timing, and `compare_digest` raises
+     `TypeError` on non-ASCII `str`, which would turn a bad login into a 500.
+  3. The bucket rule (`width = (max - min) // 10`) gave width 0 for any
+     range under 10, not only when `min == max`, putting everyone in the
+     last bucket.
+  The same review confirmed the 422 shapes, `extra="forbid"` behaviour, the
+  201/204 statuses, and CORS header behaviour in a scratch FastAPI app, and
+  noted that the `.ilike()` portability claim was overstated.
+- Approved the design with corrections: `POST /employees` returns 201; three
+  separate insights endpoints; a missing `AUTH_SECRET_KEY` fails fast with
+  no dev fallback; buckets use a ceiling-width rule; the EXPLAIN assertion
+  must match positive plan text; the login compare must encode to bytes and
+  evaluate both comparisons without short-circuiting.
+
+**Slice 1 (list): built test-first, one commit per red/green step**
+- `money.minor_to_major` (the exact inverse of `parse_major_to_minor`) ->
+  `EmployeeRepository` (list/get/options) -> `EmployeeService` + schemas +
+  errors -> the three GET routes.
+- Process slip, caught by Claude Code and corrected before pushing: its first
+  commit bundled the `minor_to_major` test and implementation under a "red"
+  message. It undid this with `git reset --soft` and recommitted as separate
+  red and green steps.
+- mypy caught one real bug: the repository's `list` method shadowed the
+  builtin `list` type inside its own class body once `from __future__ import
+  annotations` was in play. Renamed to `list_employees`.
+- Asked which of the 5 plan tests passed when I dropped the `country` index.
+  It was the timing smoke test. That test had no plan assertion at all, so it
+  passed on a disguised full scan: SQLite walked `ix_employees_full_name` to
+  satisfy `ORDER BY` and applied `country=?` as a residual filter. The four
+  tests that inspect plan text did fail. Tightened every test, including the
+  timing one, to require `SEARCH employees USING INDEX ix_employees_country`
+  specifically, then re-ran the same mutation: all 5 failed.
+- Measured at 10,000 seeded rows: `GET /employees` with a country filter,
+  every sort field, both orders, 2-4ms per request.
+
+**Slice 2 (writes): same pattern**
+- Repository writes (create/get_by_email/update/delete, no method commits)
+  -> `EmployeeService` writes (`derive_salary_fields` on both create and
+  update; `InvalidAmountError` mapped to `FieldValidationError(
+  "annual_gross_salary", ...)`, caught before the plain `ValueError` that
+  maps to `"country"`) -> the three write routes, no auth yet.
+- Mutation-checked two tests: removed email lowercasing in `create_employee`
+  and confirmed the case-insensitive duplicate test failed (neither the
+  pre-check nor SQLite's case-sensitive unique constraint caught it); removed
+  the `existing.id != employee_id` self-exclusion in `update_employee` and
+  confirmed the "own email" test failed while the "different employee" test
+  still passed.
+- Manual round trip against a seeded 10,000-row DB with a JPY employee: POST
+  "6500000" JPY gave `"6500000"` and USD `"43550.00"`; PUT changing only
+  `country` to US with the same salary string gave `"6500000.00"` and
+  `"6500000.00"`. DELETE returned 204, then GET returned 404.
+- Recorded in design-notes.md that writes are unprotected until auth exists
+  (Slice 4) and this backend must not be redeployed before then.
+
+**Three follow-up gaps, closed before Slice 3**
+- Verified over all 10,000 seeded rows that every email is already lowercase.
+  Added a model test proving SQLite's unique constraint on email is
+  case-sensitive, so the lowercasing is what keeps duplicates out.
+- Verified `PUT` bumps `updated_at` and leaves `created_at` unchanged for a
+  real change. A PUT with an identical body does not change `updated_at`,
+  because SQLAlchemy sees no net change and emits no UPDATE. Accepted: the
+  column means "when the data last changed", and an audit trail is out of
+  scope.
+- `session.rollback()` before `raise DuplicateEmailError` was already in
+  place; added the missing test that the session survives a commit-time
+  race. Mutation-checked: removing the rollback fails the new test with
+  `PendingRollbackError`, while the router-level duplicate test still passes
+  because FastAPI opens a fresh session per request.
+
+**Result:** 327 tests pass; ruff and strict mypy clean.
+
+**What I learned:** A loose assertion ("some index was used") can pass for
+the same wrong reason a missing assertion can: SQLite will substitute a
+different index to avoid a sort. And a missing rollback can be invisible at
+the API layer when every request gets a fresh session.
