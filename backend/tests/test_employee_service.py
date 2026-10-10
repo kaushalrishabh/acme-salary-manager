@@ -12,7 +12,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from app.database import create_app_engine
-from app.employee_repository import EmployeeFilters
+from app.employee_repository import EmployeeFilters, EmployeeRepository
 from app.employee_service import EmployeeService
 from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base, Employee
@@ -328,3 +328,26 @@ def test_update_employee_with_an_identical_body_does_not_change_updated_at(
 
     assert result.created_at == created.created_at
     assert result.updated_at == created.updated_at
+
+
+# --- session recovery after a commit-time race ----------------------------------------
+
+
+def test_session_is_still_usable_after_a_commit_time_integrity_error(
+    session: Session, service: EmployeeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make_employee(session, email="race@example.com")
+
+    # Simulate a race: the pre-check sees no conflict, but the real INSERT
+    # still violates the unique constraint at commit time.
+    monkeypatch.setattr(EmployeeRepository, "get_by_email", lambda self, email: None)
+
+    with pytest.raises(DuplicateEmailError):
+        service.create_employee(_create_data(email="race@example.com", full_name="Someone Else"))
+
+    # The failed commit must have been rolled back: the SAME session should
+    # still accept a genuinely new, unrelated write afterward, not raise
+    # sqlalchemy.exc.PendingRollbackError.
+    result = service.create_employee(_create_data(email="fresh@example.com"))
+
+    assert result.email == "fresh@example.com"
