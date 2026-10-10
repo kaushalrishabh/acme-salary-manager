@@ -4,6 +4,7 @@ from app.money import (
     MAX_SALARY_MAJOR,
     MIN_SALARY_MAJOR,
     InvalidAmountError,
+    minor_to_major,
     parse_major_to_minor,
     round_half_even,
     to_usd_cents,
@@ -195,3 +196,48 @@ def test_salary_limits_are_ints_ordered_and_fit_comfortably_in_64_bits() -> None
     # The largest minor_unit is 3 decimal places; even then this must fit
     # well inside a 64-bit signed integer (SQLAlchemy's BigInteger).
     assert MAX_SALARY_MAJOR * 10**3 < 2**63
+
+
+# --- minor_to_major ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("amount_minor", "minor_unit", "expected"),
+    [
+        (8_500_050, 2, "85000.50"),
+        (8_500_000, 2, "85000.00"),
+        (1, 2, "0.01"),
+        (1_000_000, 0, "1000000"),  # JPY: no decimal point at all
+        (100, 0, "100"),
+        (0, 2, "0.00"),
+        (7, 3, "0.007"),
+    ],
+)
+def test_minor_to_major(amount_minor: int, minor_unit: int, expected: str) -> None:
+    assert minor_to_major(amount_minor, minor_unit) == expected
+
+
+def test_minor_to_major_returns_str() -> None:
+    assert type(minor_to_major(8_500_050, 2)) is str
+
+
+@pytest.mark.parametrize("minor_unit", [-1, 4])
+def test_minor_to_major_rejects_minor_unit_outside_0_to_3(minor_unit: int) -> None:
+    with pytest.raises(ValueError):
+        minor_to_major(100, minor_unit)
+
+
+@pytest.mark.parametrize(
+    ("amount_minor", "minor_unit"),
+    [
+        (8_500_050, 2),
+        (1_000_000, 0),
+        (123_456_789, 2),
+        (7, 3),
+    ],
+)
+def test_minor_to_major_round_trips_through_parse_major_to_minor(
+    amount_minor: int, minor_unit: int
+) -> None:
+    major = minor_to_major(amount_minor, minor_unit)
+    assert parse_major_to_minor(major, minor_unit) == amount_minor
