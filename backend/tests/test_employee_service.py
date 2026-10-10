@@ -174,7 +174,7 @@ def _create_data(**overrides: object) -> EmployeeCreate:
         "hire_date": date(2020, 1, 1),
     }
     defaults.update(overrides)
-    return EmployeeCreate(**defaults)  # type: ignore[arg-type]
+    return EmployeeCreate(**defaults)
 
 
 def _update_data(**overrides: object) -> EmployeeUpdate:
@@ -188,7 +188,7 @@ def _update_data(**overrides: object) -> EmployeeUpdate:
         "hire_date": date(2020, 1, 1),
     }
     defaults.update(overrides)
-    return EmployeeUpdate(**defaults)  # type: ignore[arg-type]
+    return EmployeeUpdate(**defaults)
 
 
 # --- create_employee ---------------------------------------------------------------
