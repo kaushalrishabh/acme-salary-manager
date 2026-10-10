@@ -252,6 +252,53 @@ asserted in tests, because timing assertions make tests flaky.
 | `create_all` instead of Alembic | No migration tooling for a reseeded SQLite demo | Moving to Postgres with real data would need migrations |
 | No search index | Simple and portable | Full scan per search; fine at 10k, not at millions |
 
+## Employees and insights API
+
+Full contract proposed and reviewed before any code; built slice by slice
+(list, writes, insights, auth), TDD, one slice per review. Decisions fixed
+so far:
+
+- **`POST /employees` returns 201.**
+- **Insights are three separate endpoints:** `/insights/country`,
+  `/insights/department`, `/insights/job-title` -- not one combined
+  response, so the dashboard can fetch/cache each panel independently.
+- **`AUTH_SECRET_KEY` missing at startup is a fail-fast error, not a dev
+  fallback.** (Auth isn't built yet; this is fixed ahead of Slice 4 so it
+  isn't relitigated then.)
+- **Distribution buckets: ceiling width, integer maths only, always exactly
+  10 buckets.**
+  - `n = max_minor - min_minor + 1`, `width = (n + 9) // 10` (ceiling of
+    `n / 10`, no floats).
+  - Bucket index for a value `v` is `(v - min_minor) // width` -- always
+    `0..9`.
+  - Bucket `i` covers `[min + i*width, min + (i+1)*width)`, exclusive,
+    except the last *non-empty* bucket, whose `range_max` is clamped to
+    `max` (inclusive).
+  - Trailing buckets past `max` (when the data doesn't fill all 10) have
+    `range_min == range_max == max` and `count == 0`.
+  - `min == max` needs no special case: `width` is 1 and every value lands
+    in bucket 0 by the same rule.
+- **Search** (`q`, on `full_name` and `email`): `LOWER(column) LIKE
+  LOWER(:pattern) ESCAPE '\'`, both sides explicitly lower-cased so the
+  comparison is case-insensitive identically on SQLite and Postgres,
+  regardless of either engine's own default collation. `%`, `_` and `\` in
+  the user's input are backslash-escaped first, so a literal percent or
+  underscore in a name is never read as a wildcard. Deliberately not
+  indexed (see Indexes, above) -- a leading-wildcard `LIKE` can't use a
+  B-tree index regardless of engine.
+- **Confirming the list query is indexed, at 10,000 rows:** `EXPLAIN QUERY
+  PLAN` on a filtered, sorted page must contain a `SEARCH employees USING
+  INDEX` line, and must not contain a bare `SCAN employees` line (one
+  without `USING INDEX`). The temp B-tree SQLite adds for `ORDER BY` is
+  accepted as-is; no composite index was added to remove it. Verified by
+  mutation: temporarily dropping the `country` index made the assertion
+  fail, confirming the test isn't a tautology, before reverting.
+- **Measured at 10,000 rows:** `GET /employees` with a country filter,
+  across every sort field and both orders, responds in 2-4ms (well under
+  the 500ms success criterion in requirements.md).
+
 ## Open items
 
-- Distribution bucket boundaries, for USD and for each local currency.
+- Exact salary-limit values per currency for the input schema (JPY's
+  natural range is nothing like USD's; the current `MIN_SALARY_MAJOR`/
+  `MAX_SALARY_MAJOR` are a single flat range, not yet currency-aware).
