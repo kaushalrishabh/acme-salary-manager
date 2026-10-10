@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.api import employees, health
 from app.database import create_app_engine
-from app.errors import NotFoundError
+from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base
 from app.seeding import (
     DEFAULT_EMPLOYEE_COUNT,
@@ -52,11 +52,27 @@ def create_app(
     app.include_router(health.router)
     app.include_router(employees.router)
     app.add_exception_handler(NotFoundError, _not_found_handler)
+    app.add_exception_handler(DuplicateEmailError, _duplicate_email_handler)
+    app.add_exception_handler(FieldValidationError, _field_validation_handler)
     return app
 
 
 async def _not_found_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+async def _duplicate_email_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+
+async def _field_validation_handler(request: Request, exc: Exception) -> JSONResponse:
+    assert isinstance(exc, FieldValidationError)
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": [{"loc": ["body", exc.field], "msg": exc.message, "type": "value_error"}]
+        },
+    )
 
 
 app = create_app()
