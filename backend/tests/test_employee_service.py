@@ -3,6 +3,7 @@ repository, formats money fields as exact major-unit strings, and raises
 NotFoundError for a missing employee.
 """
 
+import time
 from collections.abc import Generator
 from datetime import date
 
@@ -293,3 +294,37 @@ def test_update_employee_raises_duplicate_for_a_different_employees_email(
 def test_delete_employee_raises_not_found_for_a_missing_id(service: EmployeeService) -> None:
     with pytest.raises(NotFoundError):
         service.delete_employee(999_999)
+
+
+# --- timestamps on update ------------------------------------------------------------
+
+
+def test_update_employee_bumps_updated_at_and_leaves_created_at_unchanged(
+    service: EmployeeService,
+) -> None:
+    created = service.create_employee(_create_data())
+    time.sleep(1.1)  # SQLite's CURRENT_TIMESTAMP (func.now()) has second granularity
+
+    updated = service.update_employee(created.id, _update_data(full_name="Ada L."))
+
+    assert updated.created_at == created.created_at
+    assert updated.updated_at > created.updated_at
+
+
+def test_update_employee_with_an_identical_body_does_not_change_updated_at(
+    service: EmployeeService,
+) -> None:
+    created = service.create_employee(_create_data())
+    time.sleep(1.1)
+
+    # Same values as the create: SQLAlchemy's attribute tracking sees no net
+    # change (old == new on every column), so no UPDATE statement is ever
+    # emitted and onupdate=func.now() never fires. Treated here as
+    # acceptable, not a bug: updated_at means "when this row's data last
+    # actually changed," not "when a write request was last received," and
+    # there is no audit-trail requirement (explicitly out of scope,
+    # requirements.md) asking for the latter.
+    result = service.update_employee(created.id, _update_data())
+
+    assert result.created_at == created.created_at
+    assert result.updated_at == created.updated_at
