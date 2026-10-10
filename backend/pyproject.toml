@@ -27,6 +27,11 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's required idiom: Depends(...) as an argument default is
+# evaluated once, at route-registration time, by design.
+extend-immutable-calls = ["fastapi.Depends"]
+
 [tool.mypy]
 strict = true
 plugins = ["pydantic.mypy"]

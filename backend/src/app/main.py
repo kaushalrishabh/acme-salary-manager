@@ -3,11 +3,13 @@ import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.api import health
+from app.api import employees, health
 from app.database import create_app_engine
+from app.errors import NotFoundError
 from app.models import Base
 from app.seeding import (
     DEFAULT_EMPLOYEE_COUNT,
@@ -48,7 +50,13 @@ def create_app(
     app.state.engine = create_app_engine(database_url)
     app.state.seed_count = seed_count
     app.include_router(health.router)
+    app.include_router(employees.router)
+    app.add_exception_handler(NotFoundError, _not_found_handler)
     return app
+
+
+async def _not_found_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 app = create_app()

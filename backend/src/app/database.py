@@ -1,9 +1,12 @@
 """Database engine setup: reads DATABASE_URL from the environment."""
 
 import os
+from collections.abc import Iterator
 from typing import Any
 
+from fastapi import Request
 from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.orm import Session
 
 DEFAULT_DATABASE_URL = "sqlite:///./acme_salary_manager.db"
 
@@ -20,6 +23,12 @@ def create_app_engine(database_url: str | None = None) -> Engine:
     if url.startswith("sqlite"):
         _enable_sqlite_foreign_keys(engine)
     return engine
+
+
+def get_session(request: Request) -> Iterator[Session]:
+    """FastAPI dependency: a Session bound to the running app's engine."""
+    with Session(request.app.state.engine) as session:
+        yield session
 
 
 def _enable_sqlite_foreign_keys(engine: Engine) -> None:
