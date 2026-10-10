@@ -1,16 +1,21 @@
-"""Integration tests for the Slice 1 routes: GET /employees,
-/employees/options, /employees/{id}. No writes, no auth exist yet, so test
-data is inserted directly via a session against the running app's engine.
+"""Integration tests for the employees routes.
+
+Slice 1 (reads): GET /employees, /employees/options, /employees/{id}.
+Slice 2 (writes): POST /employees, PUT /employees/{id}, DELETE
+/employees/{id}. Auth doesn't exist yet (Slice 4) -- these write routes are
+unprotected for now; see docs/design-notes.md.
 """
 
 from collections.abc import Generator
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.employee_repository import EmployeeRepository
 from app.main import create_app
 from app.models import Employee
 from app.salary import derive_salary_fields
@@ -169,3 +174,139 @@ def test_get_employee_missing_id_returns_404(client: TestClient) -> None:
     response = client.get("/employees/999999")
 
     assert response.status_code == 404
+
+
+def _employee_payload(**overrides: Any) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "full_name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "job_title": "Engineer",
+        "department": "Engineering",
+        "country": "US",
+        "annual_gross_salary": "70000",
+        "hire_date": "2020-01-01",
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+# --- POST /employees -----------------------------------------------------------------
+
+
+def test_create_employee_returns_201_with_employee_read_shape(client: TestClient) -> None:
+    response = client.post("/employees", json=_employee_payload())
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["full_name"] == "Ada Lovelace"
+    assert body["email"] == "ada@example.com"
+    assert body["currency"] == "USD"
+    assert body["annual_gross_salary"] == "70000.00"
+    assert "id" in body
+
+
+def test_create_employee_rejects_an_unknown_field(client: TestClient) -> None:
+    response = client.post("/employees", json=_employee_payload(unexpected_field="nope"))
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "currency",
+        "annual_gross_salary_usd",
+        "annual_gross_salary_usd_cents",
+        "annual_gross_salary_minor",
+    ],
+)
+def test_create_employee_rejects_currency_or_usd_fields_in_the_body(
+    client: TestClient, field: str
+) -> None:
+    response = client.post("/employees", json=_employee_payload(**{field: "anything"}))
+
+    assert response.status_code == 422
+
+
+def test_create_employee_duplicate_email_returns_409(client: TestClient) -> None:
+    client.post("/employees", json=_employee_payload(email="dup@example.com"))
+
+    response = client.post(
+        "/employees", json=_employee_payload(email="dup@example.com", full_name="Someone Else")
+    )
+
+    assert response.status_code == 409
+
+
+def test_create_employee_commit_time_integrity_error_returns_409_not_500(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client.post("/employees", json=_employee_payload(email="race@example.com"))
+
+    # Simulate a race: the pre-check sees no conflict (as if the other
+    # request's commit hadn't landed yet), but the real INSERT still
+    # violates the unique constraint -- must surface as 409, not 500.
+    monkeypatch.setattr(EmployeeRepository, "get_by_email", lambda self, email: None)
+
+    response = client.post(
+        "/employees", json=_employee_payload(email="race@example.com", full_name="Someone Else")
+    )
+
+    assert response.status_code == 409
+
+
+# --- PUT /employees/{id} --------------------------------------------------------------
+
+
+def test_update_employee_returns_200_with_recomputed_fields(client: TestClient) -> None:
+    created = client.post("/employees", json=_employee_payload()).json()
+
+    response = client.put(
+        f"/employees/{created['id']}",
+        json=_employee_payload(full_name="Ada L.", annual_gross_salary="80000"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "Ada L."
+    assert body["annual_gross_salary"] == "80000.00"
+
+
+def test_update_employee_missing_id_returns_404(client: TestClient) -> None:
+    response = client.put("/employees/999999", json=_employee_payload())
+
+    assert response.status_code == 404
+
+
+def test_update_employee_changing_only_country_recomputes_currency_and_usd(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/employees", json=_employee_payload(country="US", annual_gross_salary="70000")
+    ).json()
+    original_usd = created["annual_gross_salary_usd"]
+    assert created["currency"] == "USD"
+
+    response = client.put(
+        f"/employees/{created['id']}",
+        json=_employee_payload(country="JP", annual_gross_salary="70000"),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "JPY"
+    assert body["annual_gross_salary"] == "70000"  # JPY: no decimal point
+    assert body["annual_gross_salary_usd"] != original_usd
+
+
+# --- DELETE /employees/{id} -----------------------------------------------------------
+
+
+def test_delete_employee_returns_204_then_404_on_get(client: TestClient) -> None:
+    created = client.post("/employees", json=_employee_payload()).json()
+
+    delete_response = client.delete(f"/employees/{created['id']}")
+    assert delete_response.status_code == 204
+
+    get_response = client.get(f"/employees/{created['id']}")
+    assert get_response.status_code == 404
