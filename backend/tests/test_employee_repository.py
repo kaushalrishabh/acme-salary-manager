@@ -75,7 +75,9 @@ def test_list_with_no_filters_returns_all_rows_sorted_by_full_name_then_id(
     make_employee(session, full_name="Amy Adams", email="amy1@example.com")
     make_employee(session, full_name="Amy Adams", email="amy2@example.com")  # ties on name
 
-    rows, total = repo.list(EmployeeFilters(), sort="full_name", order="asc", page=1, page_size=50)
+    rows, total = repo.list_employees(
+        EmployeeFilters(), sort="full_name", order="asc", page=1, page_size=50
+    )
 
     assert total == 3
     names_and_ids = [(row.full_name, row.id) for row in rows]
@@ -89,7 +91,7 @@ def test_list_filters_by_country(session: Session, repo: EmployeeRepository) -> 
     make_employee(session, country="US", email="a@example.com")
     make_employee(session, country="IN", salary_major="1000000", email="b@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(country="IN"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -101,7 +103,7 @@ def test_list_filters_by_department(session: Session, repo: EmployeeRepository) 
     make_employee(session, department="Engineering", email="a@example.com")
     make_employee(session, department="Sales", job_title="Sales Manager", email="b@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(department="Sales"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -113,7 +115,7 @@ def test_list_filters_by_job_title(session: Session, repo: EmployeeRepository) -
     make_employee(session, job_title="Engineer", email="a@example.com")
     make_employee(session, job_title="Senior Engineer", email="b@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(job_title="Senior Engineer"),
         sort="full_name",
         order="asc",
@@ -142,7 +144,7 @@ def test_list_filters_combine_with_and_not_or(session: Session, repo: EmployeeRe
         email="c@example.com",
     )
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(country="US", department="Engineering"),
         sort="full_name",
         order="asc",
@@ -161,7 +163,7 @@ def test_list_total_reflects_the_filtered_count_not_the_overall_count(
     make_employee(session, country="US", email="b@example.com")
     make_employee(session, country="IN", salary_major="1000000", email="c@example.com")
 
-    _, total = repo.list(
+    _, total = repo.list_employees(
         EmployeeFilters(country="US"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -177,7 +179,7 @@ def test_list_search_matches_full_name_case_insensitively(
     make_employee(session, full_name="Grace Hopper", email="grace@example.com")
     make_employee(session, full_name="Alan Turing", email="alan@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(q="GRACE"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -191,7 +193,7 @@ def test_list_search_matches_email_case_insensitively(
     make_employee(session, full_name="Grace Hopper", email="grace.h@example.com")
     make_employee(session, full_name="Alan Turing", email="alan.t@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(q="ALAN.T"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -205,7 +207,7 @@ def test_list_search_treats_a_literal_percent_as_a_literal_character(
     make_employee(session, full_name="100% Done", email="hundred.percent@example.com")
     make_employee(session, full_name="100X Done", email="hundred.x@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(q="100% Done"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -219,7 +221,7 @@ def test_list_search_treats_a_literal_underscore_as_a_literal_character(
     make_employee(session, full_name="Bob Underscore", email="bob_test@example.com")
     make_employee(session, full_name="Bob Ex", email="bobxtest@example.com")
 
-    rows, total = repo.list(
+    rows, total = repo.list_employees(
         EmployeeFilters(q="bob_test"), sort="full_name", order="asc", page=1, page_size=50
     )
 
@@ -264,7 +266,7 @@ def test_list_sorts_by_each_whitelisted_field(
         salary_major="100000",
     )
 
-    rows, _ = repo.list(EmployeeFilters(), sort=field, order=order, page=1, page_size=50)
+    rows, _ = repo.list_employees(EmployeeFilters(), sort=field, order=order, page=1, page_size=50)
 
     values = [getattr(row, attr) for row in rows]
     assert values == sorted(values, reverse=(order == "desc"))
@@ -274,7 +276,9 @@ def test_list_sort_breaks_ties_with_id(session: Session, repo: EmployeeRepositor
     make_employee(session, hire_date=date(2020, 1, 1), email="a@example.com")
     make_employee(session, hire_date=date(2020, 1, 1), email="b@example.com")
 
-    rows, _ = repo.list(EmployeeFilters(), sort="hire_date", order="asc", page=1, page_size=50)
+    rows, _ = repo.list_employees(
+        EmployeeFilters(), sort="hire_date", order="asc", page=1, page_size=50
+    )
 
     assert [row.email for row in rows] == ["a@example.com", "b@example.com"]
 
@@ -286,8 +290,12 @@ def test_list_pagination_slices_correctly(session: Session, repo: EmployeeReposi
     for i in range(5):
         make_employee(session, full_name=f"Person{i}", email=f"p{i}@example.com")
 
-    page1, total1 = repo.list(EmployeeFilters(), sort="full_name", order="asc", page=1, page_size=2)
-    page2, total2 = repo.list(EmployeeFilters(), sort="full_name", order="asc", page=2, page_size=2)
+    page1, total1 = repo.list_employees(
+        EmployeeFilters(), sort="full_name", order="asc", page=1, page_size=2
+    )
+    page2, total2 = repo.list_employees(
+        EmployeeFilters(), sort="full_name", order="asc", page=2, page_size=2
+    )
 
     assert total1 == 5
     assert total2 == 5
