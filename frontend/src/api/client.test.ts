@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import * as authStore from '../auth/authStore'
 import { ApiError, apiFetch } from './client'
 
 const originalFetch = globalThis.fetch
 
 afterEach(() => {
   globalThis.fetch = originalFetch
+  authStore.setToken(null)
   vi.restoreAllMocks()
 })
 
@@ -77,5 +79,52 @@ describe('apiFetch', () => {
 
     expect(error).toBeInstanceOf(ApiError)
     expect(error.status).toBe(0)
+  })
+
+  it('sends the Authorization header on POST/PUT/DELETE when a token is set', async () => {
+    authStore.setToken('tok123')
+    let capturedHeaders: Record<string, string> | undefined
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      capturedHeaders = init?.headers as Record<string, string>
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+
+    await apiFetch('/employees', { method: 'POST', body: '{}' })
+
+    expect(capturedHeaders?.Authorization).toBe('Bearer tok123')
+  })
+
+  it('does not send the Authorization header on GET, even when a token is set', async () => {
+    authStore.setToken('tok123')
+    let capturedHeaders: Record<string, string> | undefined
+    globalThis.fetch = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      capturedHeaders = init?.headers as Record<string, string>
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+
+    await apiFetch('/employees')
+
+    expect(capturedHeaders?.Authorization).toBeUndefined()
+  })
+
+  it('a 401 on a write made with a token notifies that the session expired', async () => {
+    authStore.setToken('tok123')
+    const spy = vi.spyOn(authStore, 'notifySessionExpired')
+    mockFetchOnce(new Response(JSON.stringify({ detail: 'Not authenticated' }), { status: 401 }))
+
+    await expect(apiFetch('/employees/1', { method: 'DELETE' })).rejects.toMatchObject({
+      status: 401,
+    })
+
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a 401 on a GET (no Authorization header was sent) does not notify session-expired', async () => {
+    const spy = vi.spyOn(authStore, 'notifySessionExpired')
+    mockFetchOnce(new Response(JSON.stringify({ detail: 'Not authenticated' }), { status: 401 }))
+
+    await expect(apiFetch('/employees')).rejects.toMatchObject({ status: 401 })
+
+    expect(spy).not.toHaveBeenCalled()
   })
 })
