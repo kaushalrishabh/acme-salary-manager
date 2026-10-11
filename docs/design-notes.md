@@ -493,6 +493,63 @@ so far:
   breaks with an opaque browser-console CORS error, not a clear API
   error -- there is nothing server-side that would flag it.
 
+## Frontend
+
+**Stack:** Vite + React + TypeScript (strict), MUI (core `Table`/
+`TablePagination`/`TableSortLabel`, not the X `DataGrid`), TanStack Query v5
+for server state, Vitest + React Testing Library + MSW for tests. Yarn
+(classic, 1.x), matching this repo's existing lockfile convention.
+
+**Data flow:** `src/api/client.ts` is a single `apiFetch<T>` wrapper around
+`fetch`, reading `VITE_API_URL` (build-time, never hardcoded) and turning
+every failure -- an HTTP error response or `fetch` itself rejecting -- into
+one `ApiError` shape (`status`, `message`, and `fieldErrors` when the body
+was a 422 list). `src/api/employees.ts` layers typed query functions and
+TanStack Query hooks on top; `useEmployees` sets
+`placeholderData: keepPreviousData` so paging/filtering/sorting shows the
+previous page's rows while the next page loads, instead of flashing empty.
+
+**State decisions:**
+- Pagination: MUI's `TablePagination` is 0-based, the API's `page` is
+  1-based. `src/utils/pagination.ts` is the only place that conversion
+  happens, in both directions, each covered by a test (and mutation-
+  checked: removing the `+1` offset fails both the unit test and the
+  "next page" component test, for the right reason).
+- Page reset on filter/search/sort change: implemented as a render-time
+  comparison against the previous render's filters key (React's documented
+  "adjusting state when an input changes" pattern), not a `useEffect` --
+  an effect version triggers `eslint-plugin-react-hooks`'s
+  `set-state-in-effect` rule, the same finding hit for `useSlowRequest`
+  below. Mutation-checked: disabling the reset comparison fails the
+  "changing a filter resets the page to 1" test (page stays `2`).
+- Search debounce: a generic `useDebouncedValue(value, delayMs)` hook:
+  300ms for the search box.
+- Slow-server detection: `useSlowRequest(isFetching, thresholdMs = 5000)`
+  flips true once a query has been fetching continuously past the
+  threshold, reset in the effect's cleanup (not synchronously in the
+  effect body, which is what the lint rule above actually flags) so it
+  clears the moment fetching stops. Backs the "Waking up the server, this
+  can take up to a minute on first load" message, shown for both the
+  initial load and any later refetch -- a free-tier Render cold start can
+  hit either.
+- Money fields (`annual_gross_salary`, `annual_gross_salary_usd`) are
+  exact major-unit strings from the API, formatted for display only via
+  `Intl.NumberFormat` with the currency code -- never parsed back into a
+  number for arithmetic. The locale is pinned to `'en-US'` explicitly:
+  passing `undefined` uses the JS runtime's default locale, which produced
+  Indian-style digit grouping (`"JP¥65,00,000"`) in one environment this
+  was tested in, before the fix.
+- Dates: `hire_date` (date-only, `"YYYY-MM-DD"`) is parsed by splitting
+  the parts and building a local `Date`, never `new Date("YYYY-MM-DD")`
+  directly, which parses as UTC midnight and displays as the day before in
+  any timezone west of UTC. `created_at`/`updated_at` have no timezone
+  suffix but are UTC, so a trailing `"Z"` is appended before parsing.
+
+**Persistence caveat:** the backend database resets on restart (no
+persistent volume on the free Render tier) -- data seen in the deployed
+app, including anything created in a future write-enabled slice, does not
+survive a backend restart or redeploy.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's

@@ -59,4 +59,10 @@ kept Postgres-compatible for that reason.
 by `backend/.python-version` (3.12.15).
 
 **Vercel (frontend):** Root Directory `frontend` · Framework preset Vite ·
-Build `npm run build` · Output `dist`
+Build `yarn build` · Output `dist` · Environment variable
+`VITE_API_URL=https://acme-salary-manager-7nys.onrender.com` (Production).
+
+The frontend uses Yarn (classic, 1.x) throughout, matching the committed
+`yarn.lock` -- this build command was previously recorded as `npm run
+build`; update it in the Vercel dashboard (Project Settings -> Build &
+Development Settings) to match.
