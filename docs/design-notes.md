@@ -544,11 +544,70 @@ previous page's rows while the next page loads, instead of flashing empty.
   directly, which parses as UTC midnight and displays as the day before in
   any timezone west of UTC. `created_at`/`updated_at` have no timezone
   suffix but are UTC, so a trailing `"Z"` is appended before parsing.
+  Displayed as `"26 Jun 2017"` (`Intl.DateTimeFormat('en-GB', { dateStyle:
+  'medium' })`), not the locale-default `toLocaleDateString()`.
 
 **Persistence caveat:** the backend database resets on restart (no
 persistent volume on the free Render tier) -- data seen in the deployed
 app, including anything created in a future write-enabled slice, does not
 survive a backend restart or redeploy.
+
+## Frontend: UI polish pass
+
+A later pass restyled the table page without touching the backend.
+
+**Theme (`src/theme.ts`):** `createTheme()` with explicit design tokens
+rather than MUI defaults -- a neutral slate palette (Tailwind's slate
+50/100/200/600/900) with one indigo accent (indigo 600/700, chosen with
+white-on-indigo-600 button contrast already comfortably AA), 12px border
+radius, soft shadows (a lighter `boxShadow` override on `MuiPaper`
+elevation 1, not MUI's default harder-edged one), and Inter Variable
+self-hosted via `@fontsource-variable/inter` (imported once in
+`main.tsx`) so there's no external font request. The exact CSS name the
+package declares is `'Inter Variable'` (not `'InterVariable'` -- checked
+the package's own stylesheet rather than guessing). `MuiCssBaseline`
+carries two accessibility defaults globally: a visible `:focus-visible`
+outline, and a `prefers-reduced-motion: reduce` media query that collapses
+animation/transition durations to near-zero. No dark mode: `palette.mode`
+is fixed to `'light'` with no `colorSchemes` config, so there's no
+automatic `prefers-color-scheme` switch to turn off later.
+
+**Why Autocomplete, not Select, for Country/Department/Job title:** MUI's
+`Select` has no built-in clear affordance -- clearing a value means adding
+a manual "All" menu item and remembering to render it first. `Autocomplete`
+(non-`freeSolo`, options still only from `/employees/options`) has a
+built-in clear (x) button for free, with `slotProps.clearIndicator`
+carrying the button's own `aria-label`. A real finding during testing: MUI's
+clear indicator is CSS `visibility: hidden` until the field is focused or
+hovered -- `.Mui-focused .MuiAutocomplete-clearIndicator { visibility:
+visible }`. Testing Library's `getByRole` treats CSS-hidden elements as
+inaccessible by design, so a test that selects a value and immediately
+tries to click the (unfocused) clear button fails even though the element
+is in the DOM; each clear-button test now focuses the field first via
+`getByRole('combobox', ...)`, matching what a sighted user would actually
+have to do. (Not `getByLabelText`: the clear button's own aria-label
+contains the filter's name too, so a text-based label query matches both
+the input and the button.)
+
+**Sortable-column rule:** only `full_name`, `hire_date`, and `salary`
+(the USD column) are sortable, matching the backend's whitelist exactly --
+enforced by a dedicated test asserting every other header has no sort
+control at all (not just "inactive"), mutation-checked by wrapping
+Department in a `TableSortLabel` and confirming that test fails. Local-
+currency Salary is deliberately excluded and commented in the code: its
+values are in different currencies per employee, so they aren't
+comparable without converting to USD first -- which is what the other
+salary column already is.
+
+**Layout:** the filter bar and the table are both full-width `Paper`
+cards. Filters use MUI's `Grid` (this is MUI v9; its default `Grid` export
+*is* Grid v2 -- the `size` prop API, not the legacy `item`/`xs`/`md` props)
+with `size={{ xs: 6, md: 3 }}` on all four controls: a 2x2 grid on phones,
+four equal columns on desktop. The table's Name column is pinned via
+`position: sticky; left: 0` on both its header and body cells, so it
+stays visible when the table scrolls horizontally on narrow screens;
+`stickyHeader` on the `Table` plus a bounded-height `TableContainer`
+keeps the header pinned vertically during normal scrolling too.
 
 ## Open items
 
