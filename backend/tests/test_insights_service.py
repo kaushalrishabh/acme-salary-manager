@@ -109,6 +109,18 @@ def test_average_non_tie_case() -> None:
     assert compute_average(300, 3) == 100
 
 
+@pytest.mark.parametrize(
+    ("total", "count", "expected"),
+    [
+        (5, 2, 2),  # 2.5 ties to even (2); half-up would give 3 -- differs
+        (7, 2, 4),  # 3.5 ties to even (4); half-up also gives 4 -- coincides
+        (1, 2, 0),  # 0.5 ties to even (0); half-up would give 1 -- differs
+    ],
+)
+def test_average_ties_to_even_not_half_up(total: int, count: int, expected: int) -> None:
+    assert compute_average(total, count) == expected
+
+
 # --- median --------------------------------------------------------------------------
 
 
