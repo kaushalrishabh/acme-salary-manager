@@ -58,3 +58,54 @@ class EmployeeOptionsResponse(BaseModel):
     countries: list[str]
     departments: list[str]
     job_titles: list[str]
+
+
+class DistributionBucket(BaseModel):
+    range_min: str
+    range_max: str
+    count: int
+
+
+class CountryInsight(BaseModel):
+    country: str
+    currency: str
+    headcount: int
+    min: str
+    max: str
+    average: str
+    median: str
+    distribution: list[DistributionBucket]
+
+
+class DepartmentInsight(BaseModel):
+    department: str
+    # Deliberately no currency field at all (not null, absent): this
+    # dimension spans countries, so it has no single local currency.
+    headcount: int
+    min: str
+    max: str
+    average: str
+    median: str
+    distribution: list[DistributionBucket]
+
+
+class JobTitleInsight(BaseModel):
+    job_title: str
+    headcount: int
+    min: str
+    max: str
+    average: str
+    median: str
+    distribution: list[DistributionBucket]
+
+
+class CountryInsightsResponse(BaseModel):
+    groups: list[CountryInsight]
+
+
+class DepartmentInsightsResponse(BaseModel):
+    groups: list[DepartmentInsight]
+
+
+class JobTitleInsightsResponse(BaseModel):
+    groups: list[JobTitleInsight]
