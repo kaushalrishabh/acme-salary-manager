@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.api import employees, health
+from app.api import employees, health, insights
 from app.database import create_app_engine
 from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base
@@ -51,6 +51,7 @@ def create_app(
     app.state.seed_count = seed_count
     app.include_router(health.router)
     app.include_router(employees.router)
+    app.include_router(insights.router)
     app.add_exception_handler(NotFoundError, _not_found_handler)
     app.add_exception_handler(DuplicateEmailError, _duplicate_email_handler)
     app.add_exception_handler(FieldValidationError, _field_validation_handler)
