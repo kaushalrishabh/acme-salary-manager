@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -13,6 +12,7 @@ from app.api import auth as auth_api
 from app.api import employees, health, insights
 from app.auth import get_auth_secret_key
 from app.database import create_app_engine
+from app.env import get_env
 from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base
 from app.seeding import (
@@ -46,10 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def get_cors_allowed_origins() -> list[str]:
-    """CORS_ALLOWED_ORIGINS from the environment: comma-separated. Unset or
-    empty means no origins allowed, not "allow everything".
+    """CORS_ALLOWED_ORIGINS from the environment: comma-separated. Unset,
+    empty, or whitespace-only means no origins allowed, not "allow
+    everything".
     """
-    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    raw = get_env("CORS_ALLOWED_ORIGINS") or ""
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 

@@ -11,11 +11,11 @@ Commit boundaries, so callers know what's already durable and what isn't:
 """
 
 import logging
-import os
 
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session
 
+from app.env import get_env
 from app.models import CurrencyRate, Employee
 from app.reference_data import CURRENCIES
 from app.seed import GeneratedEmployee, generate_employees
@@ -117,4 +117,4 @@ def seed_employees_if_empty(
 
 def seed_on_empty_enabled() -> bool:
     """SEED_ON_EMPTY from the environment: off unless explicitly truthy."""
-    return os.environ.get("SEED_ON_EMPTY", "").strip().lower() in _TRUTHY_VALUES
+    return (get_env("SEED_ON_EMPTY") or "").lower() in _TRUTHY_VALUES

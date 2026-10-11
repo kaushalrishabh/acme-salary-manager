@@ -421,6 +421,20 @@ so far:
   `HR_PASSWORD`/`AUTH_SECRET_KEY`/`CORS_ALLOWED_ORIGINS` are all read from
   the environment with no hardcoded fallback. `.env.example` lists all four
   with comments; no real secret is ever committed.
+- **A blank value counts as unset, everywhere.** A real bug: copying
+  `.env.example` to `.env` and leaving `DATABASE_URL=` empty crashed
+  startup with `sqlalchemy.exc.ArgumentError` -- `os.environ.get(name,
+  default)` only falls back to `default` when the key is *absent*, not
+  when it's present but blank. `app.env.get_env(name)` is now the one
+  place every environment read in this app goes through: it returns
+  `None` for unset, empty, *or whitespace-only*, used by `DATABASE_URL`
+  (falls back to the SQLite default), `SEED_ON_EMPTY`/`CORS_ALLOWED_ORIGINS`
+  (already handled blank correctly before this, now via the same shared
+  helper), and `AUTH_SECRET_KEY`/`HR_USERNAME`/`HR_PASSWORD` (a blank value
+  is treated exactly like missing -- for the login credentials this is
+  also a correctness fix, not just a crash fix: a blank `HR_USERNAME` env
+  var previously meant *submitting an empty username could authenticate*,
+  since the old check was `is None`, not "blank").
 - **`AUTH_SECRET_KEY` fails the app at startup, not at first login,** if
   unset (`create_app` calls `get_auth_secret_key()` eagerly, before
   building the `FastAPI` instance). `HR_USERNAME`/`HR_PASSWORD` are

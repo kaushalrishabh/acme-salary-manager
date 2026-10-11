@@ -6,10 +6,11 @@ logout/revocation: a token is valid until it expires, full stop.
 """
 
 import hmac
-import os
 
 from fastapi import Header, HTTPException
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+from app.env import get_env
 
 TOKEN_MAX_AGE_SECONDS = 3600
 
@@ -25,7 +26,7 @@ def get_auth_secret_key() -> str:
     this to exist at startup (app.main.create_app) call it eagerly so a
     missing key fails fast, not on the first request.
     """
-    key = os.environ.get("AUTH_SECRET_KEY")
+    key = get_env("AUTH_SECRET_KEY")
     if not key:
         raise RuntimeError("AUTH_SECRET_KEY environment variable must be set")
     return key
@@ -40,11 +41,11 @@ def verify_credentials(username: str, password: str) -> bool:
 
     Both comparisons always run, combined with & (never `and`, which would
     short-circuit and leak which field was wrong through timing). Returns
-    False, not an exception, if either env var is unset -- every login
-    attempt then fails until both are configured.
+    False, not an exception, if either env var is unset or blank -- every
+    login attempt then fails until both are configured.
     """
-    expected_username = os.environ.get("HR_USERNAME")
-    expected_password = os.environ.get("HR_PASSWORD")
+    expected_username = get_env("HR_USERNAME")
+    expected_password = get_env("HR_PASSWORD")
     if expected_username is None or expected_password is None:
         return False
 

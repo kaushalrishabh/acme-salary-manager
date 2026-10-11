@@ -1,6 +1,5 @@
 """Database engine setup: reads DATABASE_URL from the environment."""
 
-import os
 from collections.abc import Iterator
 from typing import Any
 
@@ -8,12 +7,16 @@ from fastapi import Request
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session
 
+from app.env import get_env
+
 DEFAULT_DATABASE_URL = "sqlite:///./acme_salary_manager.db"
 
 
 def get_database_url() -> str:
-    """Return DATABASE_URL from the environment, or a local SQLite file."""
-    return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
+    """Return DATABASE_URL from the environment, or a local SQLite file.
+    A set-but-blank value counts as unset.
+    """
+    return get_env("DATABASE_URL") or DEFAULT_DATABASE_URL
 
 
 def create_app_engine(database_url: str | None = None) -> Engine:
