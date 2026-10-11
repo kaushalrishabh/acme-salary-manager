@@ -2,7 +2,10 @@
 // successful JSON body, and converts any failure (an HTTP error response,
 // or fetch itself rejecting) into one ApiError shape.
 
+import { getToken, notifySessionExpired } from '../auth/authStore'
+
 const BASE_URL = import.meta.env.VITE_API_URL as string
+const WRITE_METHODS = new Set(['POST', 'PUT', 'DELETE'])
 
 export interface FieldError {
   loc: (string | number)[]
@@ -54,17 +57,28 @@ async function toApiError(response: Response): Promise<ApiError> {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // All GETs are public; only writes carry the token, and only writes can
+  // meaningfully expire a session (a GET 401 would mean something else is
+  // wrong, not that the user needs to log back in).
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const isAuthedWrite = WRITE_METHODS.has(method) && getToken() !== null
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (isAuthedWrite) {
+    headers.Authorization = `Bearer ${getToken()}`
+  }
+  Object.assign(headers, init?.headers)
+
   let response: Response
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
-    })
+    response = await fetch(`${BASE_URL}${path}`, { ...init, headers })
   } catch {
     throw new ApiError(0, 'Network error: could not reach the server')
   }
 
   if (!response.ok) {
+    if (response.status === 401 && isAuthedWrite) {
+      notifySessionExpired()
+    }
     throw await toApiError(response)
   }
 
