@@ -250,14 +250,16 @@ describe('EmployeeTable layout', () => {
     })
   })
 
-  it('Department and Country cells are centred, matching their centred headers', async () => {
+  it('every body cell is centred, matching the centred headers', async () => {
     renderTable()
     await screen.findByText('Ada Lovelace')
 
-    const departmentCell = screen.getByText('Engineering').closest('td')
-    const countryCell = screen.getByText('United States').closest('td')
-    expect(departmentCell?.className).toContain('MuiTableCell-alignCenter')
-    expect(countryCell?.className).toContain('MuiTableCell-alignCenter')
+    const row = screen.getByText('Ada Lovelace').closest('tr') as HTMLElement
+    const cells = within(row).getAllByRole('cell')
+    expect(cells).toHaveLength(8)
+    cells.forEach((cell) => {
+      expect(cell.className).toContain('MuiTableCell-alignCenter')
+    })
   })
 
   it('Email and Job title cells expose the full value via a title attribute, for when the text is truncated', async () => {
