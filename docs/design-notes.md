@@ -711,6 +711,102 @@ real rendering that jsdom's tests couldn't have caught.
 browser automation available): all of the above, plus whether the
 Email truncation was actually needed.
 
+## Frontend: UI polish, round 4
+
+Round 3's per-column `minWidth`/`maxWidth` values (Email, Job title) plus
+the fixed-120px salary inline-blocks added up to more than the
+Container's available width (1200px, MUI's default cap with no
+`maxWidth` prop set) -- producing a horizontal scrollbar and a clipped
+Hire date column even at 1920px, which hadn't been there before round 3.
+`minWidth`/`maxWidth` on individual cells can't prevent a table from
+growing past its container; only `table-layout: fixed` with widths that
+are *percentages of the total* can.
+
+**Fix, in the order requested:**
+1. `App.tsx`'s `Container`: `maxWidth={false}` + `sx.maxWidth: 1680`
+   (overriding the default 1200px cap), gutters unchanged.
+2. `MuiTableCell` theme override: horizontal padding 16px -> 12px
+   (`padding: '16px 12px'`; MUI's own default is `padding: 16` all round).
+3. `Table`'s `sx.tableLayout`: `{ xs: 'auto', lg: 'fixed' }`. Below `lg`
+   (1200px), everything from round 3 is unchanged -- auto layout, the
+   table scrolls horizontally inside its card, Name stays pinned,
+   pagination stays outside the scrolling area. At `lg` and up, fixed
+   layout plus an explicit percentage `width` on every column (also
+   responsive -- `{ lg: 'X%' }` -- so it only takes effect at that
+   breakpoint) is what actually stops the table from exceeding its
+   container.
+
+**Column width budget (sums to 99%, intentionally under 100%):**
+
+| Column | Width | How estimated |
+|---|---|---|
+| Name | 12% | Sticky column; sized similarly to Department/Country, not tied to the longest possible name |
+| Email | 19% | Widest realistic content (`ada.allen.1209@acme.example`, ~27 chars) among the text columns |
+| Job title | 17% | Longest seeded title ("Engineering Manager", "Senior Account Executive") |
+| Department | 10% | Short, fixed set of values ("Engineering", "Marketing") |
+| Country | 12% | Longest display name ("United Kingdom"), via `formatCountryName` |
+| Salary | 10% | Worst case `"$100,000,000.00"` (~16 chars, the `MAX_SALARY_MAJOR` upper bound) |
+| Salary (USD) | 10% | Same worst case, always USD so no currency-symbol variance |
+| Hire date | 9% | Fixed format, `"26 Jun 2017"` (11 chars), never truncates |
+
+This was reasoned from character counts against realistic/worst-case
+content, not measured against a rendered page -- it's a starting budget
+for tuning, as the brief asked for, not a verified fit.
+
+**Text columns (Name, Email, Job title):** `white-space: nowrap`,
+`overflow: hidden`, `text-overflow: ellipsis`, plus the full value in a
+`title` attribute (mutation-checked: removing the attribute fails a
+dedicated test). Department/Country (chips) and Hire date never
+truncate or wrap -- the width budget is sized to fit their content
+instead.
+
+**Salary figures:** the round-3 fixed-120px inline-block becomes a
+`7.5em` `min-width` (now that the column itself is width-constrained at
+`lg+`, the figure doesn't need to supply its own fixed width) --
+tabular-nums and right-aligned internally, so digits/decimals still line
+up down the column, while the box as a whole sits centred under the
+centred header.
+
+**Name header background -- investigated, not re-guessed.** Round 3
+added an explicit `background.default` on the sticky Name header cell,
+reasoning that a sticky cell "didn't reliably pick up" MUI's own
+default. That didn't fix the reported mismatch, so this round re-read
+the actual source instead of changing the guess: every `TableCell`
+inside a `<Table stickyHeader>` gets `position: sticky` and
+`background.default` automatically from MUI's own internals
+(`node_modules/@mui/material/TableCell`) as soon as it's a head cell --
+not something unique to a cell that's *also* pinned horizontally. All 8
+header cells, Name included, were therefore already drawing their
+background from the exact same rule, and round 3's explicit override
+resolved to the identical literal value (`#f1f5f9`) via a second,
+redundant path. Since both paths agreed, the override couldn't have
+been the cause of a visible mismatch -- so it was removed rather than
+replaced with a different guess, leaving one shared rule that can't
+diverge from itself. No alpha/transparency exists anywhere in the
+relevant chain (`palette.background.default`, `.paper`, and the
+`MuiTableCell` override's `borderBottomColor` are all opaque hex
+values). If the mismatch is still visible after this, the cause isn't
+in this color/background logic and needs a real screenshot to localize
+further -- rendering-only effects (sticky-layer compositing, a
+shadow/border optical illusion at the column boundary) can't be
+diagnosed from source alone.
+
+**Page-level vs. table-level scrolling (verify-only, changed on an
+estimate).** Asked to check whether the pagination footer stays visible
+without scrolling the whole page, and whether only the table's own
+internal area scrolls rather than the page as well. `TableContainer`'s
+`maxHeight` was a flat 560px at every width; estimated page-chrome
+height at `lg+` (AppBar ~64px + Container's `py: 4` ~64px + filters card
+~88px + table card's own border/pagination ~58px, total ~274px, rounded
+up to 320px for safety) suggested the page likely did need to scroll on
+a typical ~900px-tall desktop viewport in addition to the table's own
+560px scroll area. Changed `maxHeight` to `calc(100vh - 320px)` at
+`lg+` only (below `lg`, unchanged at the flat 560px, matching the
+"existing behaviour" the brief asked to keep there). This is an
+estimate from component heights, not a measurement of the rendered
+page -- needs visual confirmation and likely tuning of the `320px`
+constant.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
