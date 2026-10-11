@@ -1,10 +1,9 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
-from app.main import create_app
 
 # Safe test-only values for every test by default, since create_app() now
 # fails fast at startup if AUTH_SECRET_KEY is unset. A test that needs to
@@ -15,6 +14,17 @@ from app.main import create_app
 _TEST_AUTH_SECRET_KEY = "test-only-secret-key-never-use-in-production"
 _TEST_HR_USERNAME = "hr"
 _TEST_HR_PASSWORD = "test-only-password"
+
+# Set *before* importing app.main, not just via the fixture below: app.main
+# has a module-level `app = create_app()` (for `uvicorn app.main:app`),
+# which runs once at import time, before any pytest fixture exists. Without
+# this, the very first import of app.main during test collection would
+# itself raise, since create_app() now fails fast without AUTH_SECRET_KEY.
+os.environ.setdefault("AUTH_SECRET_KEY", _TEST_AUTH_SECRET_KEY)
+os.environ.setdefault("HR_USERNAME", _TEST_HR_USERNAME)
+os.environ.setdefault("HR_PASSWORD", _TEST_HR_PASSWORD)
+
+from app.main import create_app  # noqa: E402 -- must follow the setdefault calls above
 
 
 @pytest.fixture(autouse=True)

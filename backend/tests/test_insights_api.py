@@ -139,6 +139,11 @@ def test_each_insights_endpoint_executes_exactly_two_queries(
 
 
 def test_insights_reflect_a_post_and_a_delete(empty_client: TestClient) -> None:
+    login = empty_client.post(
+        "/auth/login", json={"username": "hr", "password": "test-only-password"}
+    )
+    auth_headers = {"Authorization": f"Bearer {login.json()['token']}"}
+
     payload = {
         "full_name": "Ada Lovelace",
         "email": "ada@example.com",
@@ -148,7 +153,7 @@ def test_insights_reflect_a_post_and_a_delete(empty_client: TestClient) -> None:
         "annual_gross_salary": "70000",
         "hire_date": "2020-01-01",
     }
-    created = empty_client.post("/employees", json=payload).json()
+    created = empty_client.post("/employees", json=payload, headers=auth_headers).json()
 
     body = empty_client.get("/insights/country").json()
     assert body["groups"] == [
@@ -164,7 +169,7 @@ def test_insights_reflect_a_post_and_a_delete(empty_client: TestClient) -> None:
         }
     ]
 
-    empty_client.delete(f"/employees/{created['id']}")
+    empty_client.delete(f"/employees/{created['id']}", headers=auth_headers)
 
     body_after = empty_client.get("/insights/country").json()
     assert body_after == {"groups": []}

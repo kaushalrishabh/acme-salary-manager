@@ -1,9 +1,11 @@
 """Integration tests for the employees routes.
 
-Slice 1 (reads): GET /employees, /employees/options, /employees/{id}.
-Slice 2 (writes): POST /employees, PUT /employees/{id}, DELETE
-/employees/{id}. Auth doesn't exist yet (Slice 4) -- these write routes are
-unprotected for now; see docs/design-notes.md.
+Reads (list, options, get by id) are public. Writes (create, update,
+delete) require Depends(require_auth); every write test below
+authenticates through the auth_headers fixture. No test bypasses auth by
+overriding the require_auth dependency -- the "without auth"/malformed-
+header tests below call the real routes with no (or a bad) header
+instead.
 """
 
 from collections.abc import Generator
@@ -26,6 +28,13 @@ def client(tmp_path: Path) -> Generator[TestClient, None, None]:
     app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def auth_headers(client: TestClient) -> dict[str, str]:
+    response = client.post("/auth/login", json={"username": "hr", "password": "test-only-password"})
+    token = response.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 def make_employee(
@@ -193,8 +202,10 @@ def _employee_payload(**overrides: Any) -> dict[str, Any]:
 # --- POST /employees -----------------------------------------------------------------
 
 
-def test_create_employee_returns_201_with_employee_read_shape(client: TestClient) -> None:
-    response = client.post("/employees", json=_employee_payload())
+def test_create_employee_returns_201_with_employee_read_shape(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.post("/employees", json=_employee_payload(), headers=auth_headers)
 
     assert response.status_code == 201
     body = response.json()
@@ -205,8 +216,12 @@ def test_create_employee_returns_201_with_employee_read_shape(client: TestClient
     assert "id" in body
 
 
-def test_create_employee_rejects_an_unknown_field(client: TestClient) -> None:
-    response = client.post("/employees", json=_employee_payload(unexpected_field="nope"))
+def test_create_employee_rejects_an_unknown_field(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.post(
+        "/employees", json=_employee_payload(unexpected_field="nope"), headers=auth_headers
+    )
 
     assert response.status_code == 422
 
@@ -221,27 +236,35 @@ def test_create_employee_rejects_an_unknown_field(client: TestClient) -> None:
     ],
 )
 def test_create_employee_rejects_currency_or_usd_fields_in_the_body(
-    client: TestClient, field: str
+    client: TestClient, auth_headers: dict[str, str], field: str
 ) -> None:
-    response = client.post("/employees", json=_employee_payload(**{field: "anything"}))
+    response = client.post(
+        "/employees", json=_employee_payload(**{field: "anything"}), headers=auth_headers
+    )
 
     assert response.status_code == 422
 
 
-def test_create_employee_duplicate_email_returns_409(client: TestClient) -> None:
-    client.post("/employees", json=_employee_payload(email="dup@example.com"))
+def test_create_employee_duplicate_email_returns_409(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    client.post("/employees", json=_employee_payload(email="dup@example.com"), headers=auth_headers)
 
     response = client.post(
-        "/employees", json=_employee_payload(email="dup@example.com", full_name="Someone Else")
+        "/employees",
+        json=_employee_payload(email="dup@example.com", full_name="Someone Else"),
+        headers=auth_headers,
     )
 
     assert response.status_code == 409
 
 
 def test_create_employee_commit_time_integrity_error_returns_409_not_500(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    client.post("/employees", json=_employee_payload(email="race@example.com"))
+    client.post(
+        "/employees", json=_employee_payload(email="race@example.com"), headers=auth_headers
+    )
 
     # Simulate a race: the pre-check sees no conflict (as if the other
     # request's commit hadn't landed yet), but the real INSERT still
@@ -249,21 +272,32 @@ def test_create_employee_commit_time_integrity_error_returns_409_not_500(
     monkeypatch.setattr(EmployeeRepository, "get_by_email", lambda self, email: None)
 
     response = client.post(
-        "/employees", json=_employee_payload(email="race@example.com", full_name="Someone Else")
+        "/employees",
+        json=_employee_payload(email="race@example.com", full_name="Someone Else"),
+        headers=auth_headers,
     )
 
     assert response.status_code == 409
 
 
+def test_create_employee_without_auth_returns_401(client: TestClient) -> None:
+    response = client.post("/employees", json=_employee_payload())
+
+    assert response.status_code == 401
+
+
 # --- PUT /employees/{id} --------------------------------------------------------------
 
 
-def test_update_employee_returns_200_with_recomputed_fields(client: TestClient) -> None:
-    created = client.post("/employees", json=_employee_payload()).json()
+def test_update_employee_returns_200_with_recomputed_fields(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    created = client.post("/employees", json=_employee_payload(), headers=auth_headers).json()
 
     response = client.put(
         f"/employees/{created['id']}",
         json=_employee_payload(full_name="Ada L.", annual_gross_salary="80000"),
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -272,17 +306,21 @@ def test_update_employee_returns_200_with_recomputed_fields(client: TestClient) 
     assert body["annual_gross_salary"] == "80000.00"
 
 
-def test_update_employee_missing_id_returns_404(client: TestClient) -> None:
-    response = client.put("/employees/999999", json=_employee_payload())
+def test_update_employee_missing_id_returns_404(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    response = client.put("/employees/999999", json=_employee_payload(), headers=auth_headers)
 
     assert response.status_code == 404
 
 
 def test_update_employee_changing_only_country_recomputes_currency_and_usd(
-    client: TestClient,
+    client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     created = client.post(
-        "/employees", json=_employee_payload(country="US", annual_gross_salary="70000")
+        "/employees",
+        json=_employee_payload(country="US", annual_gross_salary="70000"),
+        headers=auth_headers,
     ).json()
     original_usd = created["annual_gross_salary_usd"]
     assert created["currency"] == "USD"
@@ -290,6 +328,7 @@ def test_update_employee_changing_only_country_recomputes_currency_and_usd(
     response = client.put(
         f"/employees/{created['id']}",
         json=_employee_payload(country="JP", annual_gross_salary="70000"),
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -299,14 +338,53 @@ def test_update_employee_changing_only_country_recomputes_currency_and_usd(
     assert body["annual_gross_salary_usd"] != original_usd
 
 
+def test_update_employee_without_auth_returns_401(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    created = client.post("/employees", json=_employee_payload(), headers=auth_headers).json()
+
+    response = client.put(f"/employees/{created['id']}", json=_employee_payload(full_name="X"))
+
+    assert response.status_code == 401
+
+
 # --- DELETE /employees/{id} -----------------------------------------------------------
 
 
-def test_delete_employee_returns_204_then_404_on_get(client: TestClient) -> None:
-    created = client.post("/employees", json=_employee_payload()).json()
+def test_delete_employee_returns_204_then_404_on_get(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    created = client.post("/employees", json=_employee_payload(), headers=auth_headers).json()
 
-    delete_response = client.delete(f"/employees/{created['id']}")
+    delete_response = client.delete(f"/employees/{created['id']}", headers=auth_headers)
     assert delete_response.status_code == 204
 
     get_response = client.get(f"/employees/{created['id']}")
     assert get_response.status_code == 404
+
+
+def test_delete_employee_without_auth_returns_401(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    created = client.post("/employees", json=_employee_payload(), headers=auth_headers).json()
+
+    response = client.delete(f"/employees/{created['id']}")
+
+    assert response.status_code == 401
+
+
+# --- malformed/missing header, end to end on a real protected route ------------------
+
+
+@pytest.mark.parametrize(
+    "header_value",
+    [None, "", "Bearer", "Basic abc", "Bearer not-a-real-token"],
+)
+def test_protected_route_rejects_a_missing_or_malformed_header(
+    client: TestClient, header_value: str | None
+) -> None:
+    headers = {} if header_value is None else {"Authorization": header_value}
+
+    response = client.post("/employees", json=_employee_payload(), headers=headers)
+
+    assert response.status_code == 401

@@ -1,13 +1,17 @@
 import logging
+import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api import auth as auth_api
 from app.api import employees, health, insights
+from app.auth import get_auth_secret_key
 from app.database import create_app_engine
 from app.errors import DuplicateEmailError, FieldValidationError, NotFoundError
 from app.models import Base
@@ -41,17 +45,33 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine.dispose()
 
 
+def get_cors_allowed_origins() -> list[str]:
+    """CORS_ALLOWED_ORIGINS from the environment: comma-separated. Unset or
+    empty means no origins allowed, not "allow everything".
+    """
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
 def create_app(
     database_url: str | None = None, seed_count: int = DEFAULT_EMPLOYEE_COUNT
 ) -> FastAPI:
     logging.basicConfig(level=logging.INFO)
+    get_auth_secret_key()  # fail fast at startup, not on the first request
 
     app = FastAPI(title="ACME Salary Manager", lifespan=lifespan)
     app.state.engine = create_app_engine(database_url)
     app.state.seed_count = seed_count
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=get_cors_allowed_origins(),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(health.router)
     app.include_router(employees.router)
     app.include_router(insights.router)
+    app.include_router(auth_api.router)
     app.add_exception_handler(NotFoundError, _not_found_handler)
     app.add_exception_handler(DuplicateEmailError, _duplicate_email_handler)
     app.add_exception_handler(FieldValidationError, _field_validation_handler)

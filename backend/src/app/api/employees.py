@@ -1,12 +1,9 @@
 """Employee routes.
 
-Slice 1: reads (list, options, get by id). Slice 2: writes (create, update,
-delete). No try/except here -- the handlers registered in app.main
-translate NotFoundError/DuplicateEmailError/FieldValidationError to their
-HTTP responses.
-
-Unprotected for now: Depends(require_auth) is not added until Slice 4. Do
-not deploy these write routes before auth exists (see docs/design-notes.md).
+Reads (list, options, get by id) are public. Writes (create, update,
+delete) require Depends(require_auth). No try/except here -- the handlers
+registered in app.main translate NotFoundError/DuplicateEmailError/
+FieldValidationError to their HTTP responses.
 """
 
 from typing import Literal
@@ -14,6 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.auth import require_auth
 from app.database import get_session
 from app.employee_repository import EmployeeFilters
 from app.employee_service import EmployeeService
@@ -56,18 +54,18 @@ def get_employee(employee_id: int, session: Session = Depends(get_session)) -> E
     return EmployeeService(session).get_employee(employee_id)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_auth)])
 def create_employee(data: EmployeeCreate, session: Session = Depends(get_session)) -> EmployeeRead:
     return EmployeeService(session).create_employee(data)
 
 
-@router.put("/{employee_id}")
+@router.put("/{employee_id}", dependencies=[Depends(require_auth)])
 def update_employee(
     employee_id: int, data: EmployeeUpdate, session: Session = Depends(get_session)
 ) -> EmployeeRead:
     return EmployeeService(session).update_employee(employee_id, data)
 
 
-@router.delete("/{employee_id}", status_code=204)
+@router.delete("/{employee_id}", status_code=204, dependencies=[Depends(require_auth)])
 def delete_employee(employee_id: int, session: Session = Depends(get_session)) -> None:
     EmployeeService(session).delete_employee(employee_id)
