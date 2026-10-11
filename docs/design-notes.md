@@ -663,6 +663,54 @@ the Autocomplete's `onChange` store the display name instead of the code
 fails a dedicated test expecting `country=GB` in the request (got
 `country=United Kingdom`). Exported for the S7 employee form to reuse.
 
+## Frontend: UI polish, round 3
+
+From screenshot review: round 2's header centring and sticky-header
+background fix were applied correctly to every column *except* the
+pinned Name one, and a few column-width/mobile issues turned up under
+real rendering that jsdom's tests couldn't have caught.
+
+- **The Name header's background and centring needed to be more
+  explicit, not just inherited.** Round 2 left the Name header cell's
+  background unset so it would inherit MUI's own `stickyHeader` default
+  (`background.default`), on the theory that this guarantees the same
+  token as every other header cell. In practice, under real rendering,
+  the sticky-positioned cell didn't reliably pick up that default, so
+  it's now set explicitly (`backgroundColor: 'background.default'`) on
+  the cell itself. Likewise, `TableSortLabel`'s own `text-align`-based
+  centring (inherited from the cell's `align="center"`) wasn't reliable
+  for this sticky cell either; every sortable header's `TableSortLabel`
+  now also gets `width: '100%', justifyContent: 'center'` directly, a
+  more robust way to centre an inline-flex element than relying on an
+  ancestor's `text-align` alone.
+- **Salary columns: centred cell, right-aligned figure.** The cell
+  itself is now `align="center"` (matching its centred header), with the
+  formatted amount wrapped in a fixed-120px `inline-block` that's
+  right-aligned internally -- digits and decimals still line up down the
+  column (every row's figure ends at the same right edge of that fixed
+  box), while the box as a whole sits centred under the header, since
+  it's the box -- not the raw text -- that the cell's centring now acts
+  on.
+- **Job title** gets `white-space: nowrap` and a 220px `minWidth` so
+  every row has the same height regardless of title length. **Email**
+  gets a 220px `maxWidth` with ellipsis truncation -- a judgment call
+  made without being able to see whether the column was actually
+  overflowing; worth a look in the screenshot review.
+- **Mobile pagination.** `TablePagination` was already rendered outside
+  `TableContainer` (not a descendant of the scrolling area), which a new
+  DOM-structure test now locks in, mutation-checked by moving it back
+  inside and confirming that test fails. The actual reported bug was
+  different: the toolbar's full content (rows-per-page label + select,
+  range text, prev/next buttons) is wider than a 390px viewport, clipping
+  the next-page button. Fixed by hiding the rows-per-page label/select at
+  `xs` (kept from `md` up) via `sx` targeting
+  `tablePaginationClasses.selectLabel`/`.input`, leaving only the range
+  text and prev/next buttons, which fit comfortably.
+
+**Still not visually verified** (this project's frontend work has no
+browser automation available): all of the above, plus whether the
+Email truncation was actually needed.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
