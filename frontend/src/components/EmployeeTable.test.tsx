@@ -259,6 +259,16 @@ describe('EmployeeTable layout', () => {
     expect(departmentCell?.className).toContain('MuiTableCell-alignCenter')
     expect(countryCell?.className).toContain('MuiTableCell-alignCenter')
   })
+
+  it('Email and Job title cells expose the full value via a title attribute, for when the text is truncated', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    const emailCell = screen.getByText('ada@example.com').closest('td')
+    const jobTitleCell = screen.getByText('Engineer').closest('td')
+    expect(emailCell).toHaveAttribute('title', 'ada@example.com')
+    expect(jobTitleCell).toHaveAttribute('title', 'Engineer')
+  })
 })
 
 describe('EmployeeTable filters', () => {
