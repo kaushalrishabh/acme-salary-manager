@@ -227,6 +227,40 @@ describe('EmployeeTable sortable columns', () => {
   })
 })
 
+describe('EmployeeTable layout', () => {
+  it('pagination controls are not inside the horizontally-scrolling table container', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    const scrollContainer = document.querySelector('.MuiTableContainer-root')
+    const pagination = document.querySelector('.MuiTablePagination-root')
+    expect(scrollContainer).not.toBeNull()
+    expect(pagination).not.toBeNull()
+    expect(scrollContainer?.contains(pagination)).toBe(false)
+  })
+
+  it('every column header is centred, including the pinned Name column', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    const headers = screen.getAllByRole('columnheader')
+    expect(headers).toHaveLength(8)
+    headers.forEach((header) => {
+      expect(header.className).toContain('MuiTableCell-alignCenter')
+    })
+  })
+
+  it('Department and Country cells are centred, matching their centred headers', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    const departmentCell = screen.getByText('Engineering').closest('td')
+    const countryCell = screen.getByText('United States').closest('td')
+    expect(departmentCell?.className).toContain('MuiTableCell-alignCenter')
+    expect(countryCell?.className).toContain('MuiTableCell-alignCenter')
+  })
+})
+
 describe('EmployeeTable filters', () => {
   beforeEach(() => {
     server.use(
