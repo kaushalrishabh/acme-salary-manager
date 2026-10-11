@@ -3,8 +3,89 @@ bucket rule, all integer arithmetic, plus the schema-level currency
 presence/absence per dimension.
 """
 
-from app.insights_service import compute_average, compute_buckets, compute_median
+from collections.abc import Generator
+from datetime import date
+
+import pytest
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
+from app.database import create_app_engine
+from app.insights_service import InsightsService, compute_average, compute_buckets, compute_median
+from app.models import Base, Employee
+from app.salary import derive_salary_fields
 from app.schemas import CountryInsight, DepartmentInsight, JobTitleInsight
+from app.seeding import ensure_currency_rates
+
+
+@pytest.fixture
+def engine() -> Generator[Engine, None, None]:
+    test_engine = create_app_engine("sqlite:///:memory:")
+    Base.metadata.create_all(test_engine)
+    yield test_engine
+    test_engine.dispose()
+
+
+@pytest.fixture
+def session(engine: Engine) -> Generator[Session, None, None]:
+    with Session(engine) as test_session:
+        ensure_currency_rates(test_session)
+        test_session.commit()
+        yield test_session
+
+
+@pytest.fixture
+def service(session: Session) -> InsightsService:
+    return InsightsService(session)
+
+
+def make_employee(
+    session: Session,
+    *,
+    full_name: str = "Ada Lovelace",
+    email: str = "ada@example.com",
+    job_title: str = "Engineer",
+    department: str = "Engineering",
+    country: str = "US",
+    salary_major: str = "70000",
+    hire_date: date = date(2020, 1, 1),
+) -> Employee:
+    fields = derive_salary_fields(country, salary_major)
+    employee = Employee(
+        full_name=full_name,
+        email=email,
+        job_title=job_title,
+        department=department,
+        country=country,
+        currency=fields.currency,
+        annual_gross_salary_minor=fields.annual_gross_salary_minor,
+        annual_gross_salary_usd_cents=fields.annual_gross_salary_usd_cents,
+        hire_date=hire_date,
+    )
+    session.add(employee)
+    session.commit()
+    return employee
+
+
+# --- end-to-end: median through the real repository, not a pre-sorted list ----------
+
+
+def test_median_is_correct_even_when_rows_are_inserted_out_of_salary_order(
+    session: Session, service: InsightsService
+) -> None:
+    # Inserted in 90000, 60000, 80000 order (not sorted by salary). The
+    # sorted middle value is 80000's equivalent; getting that right depends
+    # on InsightsRepository's bulk query actually being sorted by salary
+    # within the group, not on insertion order.
+    make_employee(session, country="US", salary_major="90000", email="a@example.com")
+    make_employee(session, country="US", salary_major="60000", email="b@example.com")
+    make_employee(session, country="US", salary_major="80000", email="c@example.com")
+
+    result = service.country_insights()
+
+    us_group = next(g for g in result.groups if g.country == "US")
+    assert us_group.median == "80000.00"
+
 
 # --- average -------------------------------------------------------------------------
 
