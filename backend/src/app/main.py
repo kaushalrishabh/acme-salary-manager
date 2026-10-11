@@ -65,8 +65,10 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_cors_allowed_origins(),
-        allow_methods=["*"],
-        allow_headers=["*"],
+        # Explicit, not "*": every method and header this API actually
+        # uses, and nothing else.
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
     )
     app.include_router(health.router)
     app.include_router(employees.router)

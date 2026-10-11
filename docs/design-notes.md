@@ -458,6 +458,19 @@ so far:
   of 401), while the other two routes' equivalent tests were unaffected.
 - **CORS:** `CORSMiddleware`, origins from `CORS_ALLOWED_ORIGINS` split on
   commas; unset or empty means the list is empty, not "allow everything".
+  `allow_methods=["GET", "POST", "PUT", "DELETE"]` and
+  `allow_headers=["Authorization", "Content-Type"]` -- explicit, not `"*"`:
+  every method and header this API actually uses, nothing else. This isn't
+  optional: Starlette's CORS *preflight* handling (the `OPTIONS` request a
+  browser sends before a cross-origin `PUT`/`POST`/`DELETE` that carries an
+  `Authorization` header) is separate from its simple-request handling, and
+  its own bare defaults are `allow_methods=("GET",)` and `allow_headers=()`
+  -- neither PUT/POST/DELETE nor Authorization. A test suite that only
+  checks a simple `GET` (as this slice's first CORS tests did) can't catch
+  a write route's preflight being silently rejected with 400. Mutation-
+  checked: removing `allow_methods`/`allow_headers` entirely (reverting to
+  those bare defaults) failed the PUT/POST/DELETE preflight tests (400,
+  not 200), while the disallowed-origin preflight test was unaffected.
 - **`app.main` has a module-level `app = create_app()`** (for
   `uvicorn app.main:app`), which runs once at import time, before any
   pytest fixture exists. Making `AUTH_SECRET_KEY` fail-fast exposed this:
