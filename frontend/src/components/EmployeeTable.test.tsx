@@ -195,6 +195,26 @@ describe('EmployeeTable', () => {
   }, 10000)
 })
 
+describe('EmployeeTable sortable columns', () => {
+  it('only exposes a sort control on Name, Salary (USD), and Hire date', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    expect(screen.getByRole('button', { name: /^name$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /salary \(usd\)/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /hire date/i })).toBeInTheDocument()
+
+    // Email, Job title, Department, Country, and local Salary are not
+    // sortable (local Salary especially: cross-currency values aren't
+    // comparable), and must not expose a clickable sort control either.
+    expect(screen.queryByRole('button', { name: /^email$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^job title$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^department$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^country$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^salary$/i })).not.toBeInTheDocument()
+  })
+})
+
 describe('EmployeeTable filters', () => {
   beforeEach(() => {
     server.use(
@@ -208,14 +228,89 @@ describe('EmployeeTable filters', () => {
     )
   })
 
-  it('filter Selects include an "All" option alongside values from /employees/options', async () => {
+  it('search box shows a clear button once it has text; clearing it drops q and resets to page 1', async () => {
+    const requests = captureEmployeesRequests()
+    const user = userEvent.setup()
+    renderTable()
+    await waitFor(() => expect(requests.length).toBeGreaterThan(0))
+
+    const searchBox = screen.getByRole('textbox', { name: /search/i })
+    expect(screen.queryByRole('button', { name: /clear search/i })).not.toBeInTheDocument()
+
+    await user.type(searchBox, 'ada')
+    await waitFor(() => expect(requests.at(-1)?.searchParams.get('q')).toBe('ada'))
+
+    await user.click(screen.getByRole('button', { name: /next page/i }))
+    await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'))
+
+    await user.click(screen.getByRole('button', { name: /clear search/i }))
+
+    await waitFor(() => {
+      const last = requests.at(-1)
+      expect(last?.searchParams.get('q')).toBeNull()
+      expect(last?.searchParams.get('page')).toBe('1')
+    })
+    expect(searchBox).toHaveValue('')
+  })
+
+  const AUTOCOMPLETE_FILTERS = [
+    {
+      label: /country/i,
+      optionName: 'US',
+      paramName: 'country',
+      clearLabel: /clear country filter/i,
+    },
+    {
+      label: /department/i,
+      optionName: 'Engineering',
+      paramName: 'department',
+      clearLabel: /clear department filter/i,
+    },
+    {
+      label: /job title/i,
+      optionName: 'Engineer',
+      paramName: 'job_title',
+      clearLabel: /clear job title filter/i,
+    },
+  ]
+
+  it.each(AUTOCOMPLETE_FILTERS)(
+    '$paramName filter: clear button is reachable by name, clears the filter, drops the param, and resets to page 1',
+    async ({ label, optionName, paramName, clearLabel }) => {
+      const requests = captureEmployeesRequests()
+      const user = userEvent.setup()
+      renderTable()
+      await screen.findByText('Ada Lovelace')
+
+      await user.click(screen.getByLabelText(label))
+      await user.click(await screen.findByRole('option', { name: optionName }))
+      await waitFor(() => expect(requests.at(-1)?.searchParams.get(paramName)).toBe(optionName))
+
+      await user.click(screen.getByRole('button', { name: /next page/i }))
+      await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'))
+
+      // MUI's clear indicator is visibility:hidden until the field is
+      // focused or hovered -- focus it first, same as a real user would.
+      // (getByRole('combobox', ...), not getByLabelText: the clear button's
+      // own aria-label also contains this filter's name, so a text-based
+      // label query would match both it and the input.)
+      await user.click(screen.getByRole('combobox', { name: label }))
+      await user.click(screen.getByRole('button', { name: clearLabel }))
+
+      await waitFor(() => {
+        const last = requests.at(-1)
+        expect(last?.searchParams.get(paramName)).toBeNull()
+        expect(last?.searchParams.get('page')).toBe('1')
+      })
+    },
+  )
+
+  it('country Autocomplete offers values from /employees/options, not a freeSolo text entry', async () => {
     renderTable()
 
-    const countrySelect = await screen.findByLabelText(/country/i)
-    await userEvent.setup().click(countrySelect)
+    await userEvent.setup().click(await screen.findByLabelText(/country/i))
 
     const listbox = await screen.findByRole('listbox')
-    expect(within(listbox).getByRole('option', { name: /all/i })).toBeInTheDocument()
     expect(within(listbox).getByRole('option', { name: 'US' })).toBeInTheDocument()
     expect(within(listbox).getByRole('option', { name: 'IN' })).toBeInTheDocument()
   })
