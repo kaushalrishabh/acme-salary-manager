@@ -820,6 +820,18 @@ visual consistency with every other column. The pinned Name column
 (sticky positioning, opaque background on mobile) and the ellipsis +
 `title` attribute on Name/Email/Job title are unchanged.
 
+## S7: GET /meta/countries
+
+A public, read-only view of the existing `COUNTRY_CURRENCY`/`CURRENCIES`
+reference data (no new data introduced): `[{code, currency, minor_unit}]`,
+sorted by code. Exists for the employee form, which needs to show the
+currency and decimal places for whichever country the user picks (e.g.
+"JPY, no decimals") before they type a salary. Country *display names*
+(e.g. "Japan") are not part of this response -- they come from the
+frontend's own `formatCountryName` helper (S6/round 2), which already
+owns that mapping; duplicating it here would just be two sources of
+truth for the same thing.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
