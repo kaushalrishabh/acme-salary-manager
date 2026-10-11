@@ -1,9 +1,11 @@
+import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { theme } from '../theme'
 import { API_BASE_URL, defaultEmployees, makeEmployee } from '../test/handlers'
 import { server } from '../test/server'
 import { EmployeeTable } from './EmployeeTable'
@@ -11,9 +13,15 @@ import { EmployeeTable } from './EmployeeTable'
 function renderTable() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <EmployeeTable />
-    </QueryClientProvider>,
+    // The real app theme, not MUI's default -- some behavior (e.g. the
+    // Autocomplete clear indicator's forced visibility) is a theme-level
+    // style override that only applies under this ThemeProvider, same as
+    // in production.
+    <ThemeProvider theme={theme}>
+      <QueryClientProvider client={queryClient}>
+        <EmployeeTable />
+      </QueryClientProvider>
+    </ThemeProvider>,
   )
 }
 
@@ -296,12 +304,9 @@ describe('EmployeeTable filters', () => {
       await user.click(screen.getByRole('button', { name: /next page/i }))
       await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'))
 
-      // MUI's clear indicator is visibility:hidden until the field is
-      // focused or hovered -- focus it first, same as a real user would.
-      // (getByRole('combobox', ...), not getByLabelText: the clear button's
-      // own aria-label also contains this filter's name, so a text-based
-      // label query would match both it and the input.)
-      await user.click(screen.getByRole('combobox', { name: label }))
+      // The clear button must be clickable cold, with no prior focus or
+      // hover on the field -- that's the whole point of forcing it visible
+      // on touch devices, which have no hover state at all.
       await user.click(screen.getByRole('button', { name: clearLabel }))
 
       await waitFor(() => {
@@ -309,6 +314,26 @@ describe('EmployeeTable filters', () => {
         expect(last?.searchParams.get(paramName)).toBeNull()
         expect(last?.searchParams.get('page')).toBe('1')
       })
+    },
+  )
+
+  it.each(AUTOCOMPLETE_FILTERS)(
+    '$paramName filter: clear button is visible and reachable by name as soon as a value is set, with no hover or focus',
+    async ({ label, optionName, clearLabel }) => {
+      const user = userEvent.setup()
+      renderTable()
+      await screen.findByText('Ada Lovelace')
+
+      expect(screen.queryByRole('button', { name: clearLabel })).not.toBeInTheDocument()
+
+      await user.click(screen.getByLabelText(label))
+      await user.click(await screen.findByRole('option', { name: optionName }))
+      // Selecting an option leaves the field focused; move focus away so
+      // this genuinely tests "visible with no focus or hover", not just
+      // "visible right after an interaction that happens to leave it focused".
+      await user.click(document.body)
+
+      expect(screen.getByRole('button', { name: clearLabel })).toBeInTheDocument()
     },
   )
 
