@@ -1,3 +1,4 @@
+import { autocompleteClasses } from '@mui/material/Autocomplete'
 import { createTheme } from '@mui/material/styles'
 
 // Design tokens: a neutral slate palette with one indigo accent. Values are
@@ -93,6 +94,19 @@ export const theme = createTheme({
         root: {
           '&:hover .MuiTableSortLabel-icon': { opacity: 0.8 },
           '&.Mui-active .MuiTableSortLabel-icon': { opacity: 1 },
+        },
+      },
+    },
+    MuiAutocomplete: {
+      styleOverrides: {
+        // MUI hides the clear (x) button until the field is hovered or
+        // focused, which leaves an active filter with no visible way to
+        // clear it on a touch device (no hover state at all). Show it
+        // any time the field has a value, regardless of hover/focus.
+        root: {
+          [`&.${autocompleteClasses.hasClearIcon} .${autocompleteClasses.clearIndicator}`]: {
+            visibility: 'visible',
+          },
         },
       },
     },
