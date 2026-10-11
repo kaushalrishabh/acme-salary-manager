@@ -604,3 +604,143 @@ group-ordering checks passed without proving what I thought they proved
 incidental sort order). And a CORS test against a simple `GET` says
 nothing at all about whether the preflight for an actual write request
 would be rejected.
+
+### 2026-10-11 Session 5: backend deployment, S6 frontend, and a UI polish pass
+
+**Tools:** Claude Code for implementation; a separate Claude chat for
+review of each report, deployment help, and debugging.
+
+**1. Backend deployment (Render)**
+- First deploy failed at startup with "AUTH_SECRET_KEY environment
+  variable must be set". That was the fail-fast design working, not a
+  bug: the env vars (`HR_USERNAME`, `HR_PASSWORD`, `AUTH_SECRET_KEY`,
+  `CORS_ALLOWED_ORIGINS`) hadn't been set on Render yet. I set them and
+  redeployed.
+- Verified the live API with curl: `GET /employees` 200, a write without
+  a token 401, login returned a token with `expires_in` 3600, then an
+  authenticated create (a JPY employee: 6,500,000 JPY -> 43,550.00 USD,
+  the same conversion as the local round trip from Session 3) and
+  delete 204, and all three insights endpoints 200.
+- Render seeds 10,000 employees at startup because `SEED_ON_EMPTY` is on
+  and the SQLite database is empty on each start, so the demo database
+  resets on restart -- documented in docs/deployment.md.
+- Housekeeping caught during this work: I had edited `.env.example`
+  locally with real values; `git diff` showed it before any commit, so I
+  restored the file, moved the real values into an ignored `backend/.env`,
+  and added `.env` to `.gitignore` (commit `7b2f179`; `git check-ignore`
+  confirmed it). Nothing secret was committed (verified with `git log -S`).
+
+**2. S6: React frontend and employee table**
+- Stack: Vite, React, TypeScript strict, TanStack Query, MUI core `Table`
+  (not the X Data Grid), Vitest, React Testing Library, MSW, Yarn instead
+  of npm. CLAUDE.md said Yarn 1 only, but the brief's own wording and the
+  Vercel build command recorded in docs/deployment.md both said npm --
+  Claude Code flagged the conflict and asked; I chose Yarn, to match the
+  already-committed `yarn.lock`, and had the Vercel build command note
+  corrected to `yarn build`.
+- Build order, each as its own red/green commit: utils (pagination, date,
+  money) -> typed API client with one `ApiError` shape -> employees API
+  functions and TanStack Query hooks -> MSW wired into the test setup ->
+  `useDebouncedValue` and `useSlowRequest` hooks -> the `EmployeeTable`
+  component -> the App shell (AppBar, `QueryClientProvider`). 42 tests
+  passing at the end of the slice.
+- Two mutation checks, both run and reverted: disabling the
+  page-reset-on-filter-change logic failed the "changing a filter resets
+  the page to 1" test; removing the `+1` offset in the MUI-to-API page
+  conversion failed both its own unit test and the "next page" component
+  test.
+- Findings along the way: `Intl.NumberFormat` falls back to the JS
+  runtime's own locale when passed `undefined`, which produced
+  Indian-style digit grouping in this environment instead of the expected
+  Western grouping -- pinned to `'en-US'` explicitly. MSW v3 renamed its
+  `onUnhandledRequest` option to `onUnhandledFrame` (caught by a `tsc`
+  type error, not a failing test). `eslint-plugin-react-hooks`'s
+  `set-state-in-effect` rule rejects a synchronous `setState` at the top
+  of an effect body; hit twice (`useSlowRequest`'s reset, and the table's
+  page-reset-on-filter-change) and fixed both times by following React's
+  own documented pattern instead of an effect -- a cleanup-function reset
+  for the hook, a render-time comparison against the previous filters key
+  for the table. The debounce and slow-server component tests use real
+  timers, not fake ones: combining Vitest's fake timers with MSW's async
+  fetch mocking made the whole test file hang.
+- Process slip: commit `b7a8276` bundled the green `useDebouncedValue`
+  implementation together with the red (failing) tests for the separate
+  `useSlowRequest` feature, breaking the clean red/green-per-commit rule
+  I'd otherwise followed throughout.
+- Claude Code had no browser automation available, so it could not see
+  the UI itself. It started a local backend seeded with 10,000 employees
+  and I ran the dev server against it myself: confirmed 25 rows per page
+  and the "10,000 employees" count, the page jumping back to 1 when the
+  sort changes, filters working alone and combined, search sending one
+  request after typing stops, and JPY salaries showing no decimal places.
+- Review-chat contributions: asked it to check the live Render CORS
+  preflight headers and the deployed commit, after Claude Code noticed
+  the deployed response didn't match the latest local CORS-hardening
+  commit (`989a3fe`) -- flagged as open, still not resolved. Separately
+  confirmed that the limited set of sortable columns (name, hire date,
+  salary in USD) is a deliberate backend decision from Slice 1
+  (`sort: Literal["full_name", "hire_date", "salary"]`), not a frontend
+  gap, because local-currency salaries aren't comparable across
+  employees paid in different currencies.
+
+**3. UI polish pass**
+- Requested: a modern MUI theme, clearable filters, a full-width filter
+  row (four equal columns on desktop, 2x2 on mobile), and sort
+  affordances restricted to the three sortable columns.
+- Result: 48 tests. Two mutation checks, both run and reverted: disabling
+  the page-reset logic failed 5 tests (the pre-existing filter-reset test
+  plus the four new clear-button tests); adding a `TableSortLabel` to the
+  Department header failed the "only three sortable columns" test.
+- Chose MUI's `Autocomplete` over `Select` for Country/Department/Job
+  title specifically for its built-in clear (x) button, which `Select`
+  doesn't have. Hire dates now render as "26 Jun 2017"
+  (`Intl.DateTimeFormat('en-GB', { dateStyle: 'medium' })`) instead of the
+  browser's locale-default format, so the display reads the same way
+  regardless of viewer locale.
+- Finding: MUI's Autocomplete clear button is CSS `visibility: hidden`
+  until the field is focused or hovered. The first version of each
+  clear-button test failed even though the button was already in the DOM,
+  because Testing Library correctly treats a CSS-hidden element as
+  inaccessible. Fixed by having each test focus the field first (the same
+  thing a sighted user has to do) via `getByRole('combobox', ...)` rather
+  than `getByLabelText` -- the clear button's own aria-label also
+  contains the filter's name, so a text-based label query matched both
+  elements.
+- The app heading changed from "ACME Salary Manager" to "HR Salary
+  Manager" at my request.
+- Still pending, not yet done: applying the Vercel build-command fix
+  (`npm run build` -> `yarn build`) and the `VITE_API_URL` production
+  environment variable in the actual Vercel dashboard, and re-verifying
+  the live deployed site afterward.
+
+**4. A local-run bug (backend dev server, not application code)**
+- Running the backend locally so Claude Code could point a dev frontend
+  at real data (it has no browser, so this was the closest it could get
+  to checking its own UI work) hit the same "AUTH_SECRET_KEY environment
+  variable must be set" error the first Render deploy hit --
+  `uv run uvicorn app.main:app --reload` doesn't load a `.env` file on
+  its own. Passing `--env-file .env` then failed a different way:
+  `backend/.env` has `DATABASE_URL=` (intentionally blank, meaning "use
+  the SQLite default"), but `--env-file` sets that as an actual
+  empty-string environment variable, and the code's
+  `os.environ.get("DATABASE_URL", DEFAULT)` only falls back to the
+  default when the key is absent, not when it's merely empty -- so
+  SQLAlchemy received an empty URL and failed to parse it.
+- Fixed by exporting only the specific variables the app needs inline
+  (`AUTH_SECRET_KEY`, `HR_USERNAME`, `HR_PASSWORD`,
+  `CORS_ALLOWED_ORIGINS`, and `SEED_ON_EMPTY=true` for sample data)
+  without `--env-file`, so `DATABASE_URL` stayed unset and the code's own
+  default applied.
+- Separately, two full test/build runs during the UI polish pass took
+  600-900 seconds instead of the usual ~10, with no error -- caused by a
+  leftover `yarn dev` (Vite) process still running in the background from
+  the manual verification step, competing with the test runner's own Vite
+  instance over the same dependency cache. Killing the leftover dev
+  server brought run times back to normal immediately.
+
+**What I learned:** `uv run`'s environment handling doesn't match a plain
+shell's -- it doesn't read `.env` by default, and `--env-file` treats a
+blank value as "set to empty", which isn't the same thing the
+application's own fallback logic assumes. And a dev server left running
+in the background isn't always harmless -- it can silently slow down an
+unrelated test or build run in the same project by 10-100x.
