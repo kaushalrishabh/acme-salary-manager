@@ -609,6 +609,46 @@ stays visible when the table scrolls horizontally on narrow screens;
 `stickyHeader` on the `Table` plus a bounded-height `TableContainer`
 keeps the header pinned vertically during normal scrolling too.
 
+## Frontend: UI polish, round 2
+
+**Header/column rules:**
+- Every column header is centred (`align="center"` on the `TableCell`);
+  body-cell alignment is unchanged (salary stays right-aligned, Name
+  stays left via the sticky cell's default). Centring the cell centres a
+  sortable header's whole `TableSortLabel` as one inline unit, so the
+  icon stays next to its label rather than drifting to the cell's edge.
+- The pinned Name header cell had an explicit `background.paper`
+  (white) carried over from the sticky-body-cell styles, while every
+  other header cell was getting MUI's own `stickyHeader` default
+  (`background.default`, a light slate in this theme) -- a real, visible
+  mismatch. Fixed by not setting a background on the header cell at all,
+  so it falls back to the same default every other header cell uses; the
+  body cells keep their own explicit `background.paper` override, which
+  they need since MUI doesn't give body cells any automatic sticky
+  background at all.
+- Hire date (header and body) has `white-space: nowrap` and a 130px
+  `minWidth` so "26 Jun 2017" never wraps; the two salary columns have
+  `nowrap` only, no forced minimum width.
+- The standalone "X employees" line above the table was removed -- the
+  pagination footer's own "26-50 of 10,000" already states the total, so
+  the line was redundant.
+
+**Country name display:** `src/utils/country.ts` exports
+`formatCountryName(code)`, built on `Intl.DisplayNames(['en'], { type:
+'region' })` with the code itself as the fallback (also used if the
+lookup throws, which it does for an ill-formed region subtag). The
+two-letter code stays the value everywhere it's compared or sent: filter
+state, the API's `country` query param, and `value`/`onChange` on the
+Autocomplete. Only *display* goes through the helper -- the filter's
+options list (sorted by display name, not code), its selected value, and
+the table's Country chip. Typing into the filter matches against both
+the code and the display name (a custom `filterOptions`, since MUI's
+default filtering only checks `getOptionLabel`'s string, which here is
+the name), so "IN" and "ind" both find India. Mutation-checked: making
+the Autocomplete's `onChange` store the display name instead of the code
+fails a dedicated test expecting `country=GB` in the request (got
+`country=United Kingdom`). Exported for the S7 employee form to reuse.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
