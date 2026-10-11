@@ -832,6 +832,56 @@ frontend's own `formatCountryName` helper (S6/round 2), which already
 owns that mapping; duplicating it here would just be two sources of
 truth for the same thing.
 
+## S7: routing and auth
+
+**Routing:** `react-router-dom` v7 (the data router). Route config is a
+plain array (`routes.tsx`) wrapped by `createBrowserRouter` for the real
+app (`router.tsx`); tests wrap the same array in `createMemoryRouter`
+instead, each test getting its own fresh navigation history. A real bug
+caught while writing the routing tests: `createBrowserRouter` is a
+module-level singleton, so tests that `render(<App />)` more than once
+in the same file were sharing -- and leaking -- one router's navigation
+state across tests, not starting fresh each time. `/insights` is
+`React.lazy` + `Suspense`, confirmed via the build output to already be
+its own chunk (independent of auth/employee-form work, so it's cheap to
+verify now and re-check once the real dashboard, with `@mui/x-charts`,
+replaces the placeholder).
+
+**Auth token storage: sessionStorage + an in-memory copy, not a
+Context/Provider.** `src/auth/authStore.ts` is plain code (not a React
+module) that both `src/api/client.ts` (needs to read the token and
+attach it to write requests) and React components (via `useAuth`,
+`useSyncExternalStore` over the same store) can use. Every storage
+access is wrapped in `try/catch`: a private-browsing mode that throws on
+`sessionStorage.setItem` still lets the session work, just without
+surviving a refresh. `sessionStorage` over `localStorage`: the token is
+meant to be cleared when the tab closes, not persist indefinitely: a
+closer approximation to "logged in for this session" than a login that
+silently outlives the browser tab. The alternative not used,
+`httpOnly` cookies, would need the backend to set/read the cookie
+itself (CORS + cookie flags across the Vercel/Render origin split), and
+there's no backend work planned for this in S7 -- noted as a real
+trade-off, not a dismissal: an XSS vulnerability anywhere in this SPA
+can read `sessionStorage` and steal the token, which a cookie marked
+`httpOnly` would prevent.
+
+**No revocation, same as Slice 4's login design.** A token is valid
+until its 3600s expiry, full stop; logging out only forgets the token
+client-side; the server has no server-side session to invalidate early.
+
+**The 401 -> redirect path, end to end:** `apiFetch` sends
+`Authorization: Bearer <token>` only on POST/PUT/DELETE, only when a
+token is set (every GET stays public, matching the backend). If such a
+write comes back 401 (the 3600s token expired, or was otherwise
+invalidated), it calls `authStore.notifySessionExpired()`, which clears
+the token and notifies subscribers -- `AppLayout`, the one component
+that's on every route (the root route's own `element`), is where that
+turns into an actual redirect (`navigate('/login', { state: { from,
+sessionExpired: true } })`), since it's the one place `useNavigate`/
+`useLocation` only need wiring up once. `LoginPage` reads
+`location.state` both to show "Session expired, please log in again"
+and to return to the page the user came from after logging back in.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
