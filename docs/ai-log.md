@@ -516,10 +516,10 @@ next slice started.
   round the same way under both. I asked for cases that distinguish them
   (5/2 → 2, 1/2 → 0, both differing from half-up's 3 and 1) and
   mutation-checked those specifically.
-- The bucket mutation I ran was "un-clamp the last bucket" (let `range_max`
-  run past `max`) rather than the literal "last bucket excludes max" I'd
-  asked for. This was accepted as equivalent coverage of the same clamp,
-  and noted as a difference in wording rather than in substance.
+- The "last bucket excludes max" mutation was requested but not run; I ran
+  "un-clamp the last bucket" instead (letting `range_max` run past `max`
+  rather than clamping to it), which was accepted as equivalent coverage of
+  the same clamp.
 - Group ordering across the three dimensions turned out to be incidental
   SQLite behaviour (it happens to return `GROUP BY` results sorted via a
   temp B-tree), not a guarantee -- Postgres, which the schema is kept
@@ -573,22 +573,21 @@ next slice started.
   never uses its return value.
 
 **Review-chat finding on Slice 4**
-- CORS had only been tested against a simple `GET`. The review reproduced
-  in a scratch app that Starlette's default `CORSMiddleware` (no
-  `allow_methods`/`allow_headers` passed at all) rejects a `PUT` preflight
-  carrying an `Authorization` header with 400, since its bare defaults are
-  `allow_methods=("GET",)` and no headers allowed. Checking my own code
-  first, I found it was already passing `allow_methods=["*"]` and
-  `allow_headers=["*"]`, not Starlette's bare defaults, and confirmed
-  empirically that wildcard preflight already returned 200 -- so the
-  specific 400 the review reproduced didn't apply to this codebase as
-  written. I replaced the wildcards with an explicit list
+- CORS had only been tested against a simple `GET`. The review raised
+  preflight as a risk: a browser sends an `OPTIONS` preflight before a
+  cross-origin `PUT`/`POST`/`DELETE` carrying an `Authorization` header, and
+  Starlette's bare `CORSMiddleware` defaults (`allow_methods=("GET",)`, no
+  headers allowed) would reject that with 400. Checking my own code, I
+  found it already used `allow_methods=["*"]` and `allow_headers=["*"]`,
+  not Starlette's bare defaults, so no functional bug existed: the
+  preflight tests I added passed immediately, with no red state. I
+  replaced the wildcards with an explicit list
   (`["GET", "POST", "PUT", "DELETE"]` and
-  `["Authorization", "Content-Type"]`) anyway, added preflight tests for
-  `PUT`/`POST`/`DELETE` plus a disallowed-origin case, and mutation-checked
-  by reverting to Starlette's genuine bare defaults: the three write-method
-  preflight tests then failed with 400, exactly as the review had
-  predicted, while the disallowed-origin test was unaffected. Reverted.
+  `["Authorization", "Content-Type"]`) anyway, as hardening -- more
+  auditable than `"*"` -- and mutation-checked it against Starlette's
+  genuine bare defaults: with those restored, the three write-method
+  preflight tests failed with 400, while the disallowed-origin test was
+  unaffected. Reverted.
 
 **Known limits accepted, recorded in design-notes.md:** no rate limiting or
 lockout on login attempts; no logout or revocation (a token is valid until
