@@ -82,5 +82,11 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw await toApiError(response)
   }
 
+  // 204 No Content (DELETE) has no body at all -- response.json() would
+  // throw trying to parse an empty string as JSON.
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return (await response.json()) as T
 }

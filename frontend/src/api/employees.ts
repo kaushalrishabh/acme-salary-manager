@@ -1,6 +1,12 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import type { EmployeeListParams, EmployeeListResponse, EmployeeOptions } from '../types/employee'
+import type {
+  Employee,
+  EmployeeListParams,
+  EmployeeListResponse,
+  EmployeeOptions,
+  EmployeeWriteRequest,
+} from '../types/employee'
 import { apiFetch } from './client'
 
 export function buildEmployeeListSearchParams(params: EmployeeListParams): URLSearchParams {
@@ -42,5 +48,51 @@ export function useEmployeeOptions() {
   return useQuery({
     queryKey: ['employee-options'],
     queryFn: fetchEmployeeOptions,
+  })
+}
+
+export function createEmployee(data: EmployeeWriteRequest): Promise<Employee> {
+  return apiFetch<Employee>('/employees', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateEmployee(id: number, data: EmployeeWriteRequest): Promise<Employee> {
+  return apiFetch<Employee>(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export function deleteEmployee(id: number): Promise<void> {
+  return apiFetch<void>(`/employees/${id}`, { method: 'DELETE' })
+}
+
+// After any successful write, the list, the options (a new department/job
+// title/country may now exist, or an old one may no longer), and every
+// insights dimension can all be stale.
+function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['employees'] })
+  queryClient.invalidateQueries({ queryKey: ['employee-options'] })
+  queryClient.invalidateQueries({ queryKey: ['insights'] })
+}
+
+export function useCreateEmployee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: createEmployee,
+    onSuccess: () => invalidateAfterWrite(queryClient),
+  })
+}
+
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: number; data: EmployeeWriteRequest }) =>
+      updateEmployee(id, data),
+    onSuccess: () => invalidateAfterWrite(queryClient),
+  })
+}
+
+export function useDeleteEmployee() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: deleteEmployee,
+    onSuccess: () => invalidateAfterWrite(queryClient),
   })
 }

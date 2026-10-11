@@ -43,3 +43,16 @@ export interface EmployeeListParams {
   page?: number
   page_size?: number
 }
+
+// Mirrors EmployeeCreate/EmployeeUpdate (identical shape; PUT is always a
+// full body). annual_gross_salary is sent exactly as typed -- never
+// parsed or formatted here.
+export interface EmployeeWriteRequest {
+  full_name: string
+  email: string
+  job_title: string
+  department: string
+  country: string
+  annual_gross_salary: string
+  hire_date: string
+}
