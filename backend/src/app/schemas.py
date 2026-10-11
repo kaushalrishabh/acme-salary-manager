@@ -109,3 +109,15 @@ class DepartmentInsightsResponse(BaseModel):
 
 class JobTitleInsightsResponse(BaseModel):
     groups: list[JobTitleInsight]
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    expires_in: int
