@@ -38,8 +38,11 @@ def test_verify_credentials_spy_calls_compare_digest_twice_unconditionally(
 ) -> None:
     # Proves both comparisons run even when the first one already fails --
     # & does not short-circuit the way `and` would.
+    # Patched on the stdlib hmac module directly (not via app.auth.hmac,
+    # which mypy's strict re-export check disallows reaching into): it's
+    # the same module object either way, since app.auth does `import hmac`.
     spy = MagicMock(wraps=hmac.compare_digest)
-    monkeypatch.setattr(auth.hmac, "compare_digest", spy)
+    monkeypatch.setattr(hmac, "compare_digest", spy)
 
     assert auth.verify_credentials("wrong", "test-only-password") is False
 
@@ -92,7 +95,12 @@ def test_issued_token_is_accepted_by_require_auth() -> None:
 
 def test_require_auth_rejects_a_tampered_token() -> None:
     token = auth.issue_token("hr")
-    tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
+    # Flip the *first* character, not the last: base64's final character can
+    # have unused "slack" bits (when the encoded byte count isn't a
+    # multiple of 3), so more than one character value can decode to the
+    # same bytes there -- flipping it doesn't reliably change the payload.
+    # The first character always encodes a full 6 bits, so this does.
+    tampered = ("a" if token[0] != "a" else "b") + token[1:]
 
     with pytest.raises(HTTPException) as exc_info:
         auth.require_auth(authorization=f"Bearer {tampered}")
