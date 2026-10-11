@@ -456,3 +456,152 @@ slice report.
 the same wrong reason a missing assertion can: SQLite will substitute a
 different index to avoid a sort. And a missing rollback can be invisible at
 the API layer when every request gets a fresh session.
+
+### 2026-10-11 Session 4: Employees API, Slice 3 (insights) and Slice 4 (auth + CORS)
+
+**Tools:** Claude Code for the design and all implementation. A separate
+Claude chat reviewed each slice's report after I accepted it, before the
+next slice started.
+
+**Slice 3: insights**
+- Built in the established order: `InsightsRepository` (red, then green)
+  → `InsightsService` (average/median/buckets; red, then green) → an
+  end-to-end median test → the `/insights/country`,
+  `/insights/department`, `/insights/job-title` routes, wired into
+  `main.py`, with comprehensive integration tests written straight after
+  (not red-first; see "process slip" below).
+- Design: exactly two queries per dimension -- one `GROUP BY` for
+  count/sum/min/max, one bulk `(group_value, salary)` fetch grouped in
+  Python with `itertools.groupby`. Verified with a SQLAlchemy
+  `before_execute` listener counting real statements per request: exactly
+  2, for all three endpoints.
+- Three mutation checks, each performed once and reverted: dropping the
+  bulk query's secondary `ORDER BY` (on salary) broke an integration-level
+  median test; un-clamping the last bucket's `range_max` (letting it run
+  past `max` instead of clamping to it) failed 4 of 5 bucket tests;
+  swapping `round_half_even` for `//` in average failed the one test built
+  specifically to disagree with floor division, while two other average
+  tests coincidentally still passed.
+- A gap I found in my own test suite before trusting it: my first
+  `compute_median` tests passed an already-sorted list directly, so
+  removing the repository's secondary `ORDER BY` couldn't have affected
+  them. I added `test_median_is_correct_even_when_rows_are_inserted_out_of_salary_order`
+  (through the real repository, not a hand-built list) before running that
+  mutation check.
+- Differential test, at 10,000 seeded rows: every group's
+  count/min/max/average/median/distribution recomputed independently
+  (Python's `decimal` module for rounding, a separate reimplementation of
+  the bucket rule rather than calling `compute_buckets`) and compared for
+  exact equality against the live endpoint, across all three dimensions.
+  Stated limitation: the independent bucket reimplementation shares the
+  same documented rule as the real one, so it could not have caught a
+  shared misreading of that rule -- only an implementation bug, such as an
+  off-by-one or a wrong clamp, in one but not the other.
+- mypy found two real issues, both in the repository: a helper's
+  parameters were typed `ColumnElement[str]`/`ColumnElement[int]`, but
+  `Employee.country` etc. are `InstrumentedAttribute`, which isn't
+  assignable there (fixed by typing the helper as `InstrumentedAttribute`);
+  and labelling the headcount column `"count"` would have shadowed
+  `Row`'s own `.count()` tuple method, which mypy's `Row` stub types
+  regardless of any per-query label (fixed by labelling it `"headcount"`
+  instead, with the `DimensionAggregate` dataclass field still called
+  `count`).
+- Measured at 10,000 rows (5-run average each): `/insights/country`
+  ~15ms, `/insights/department` ~15ms, `/insights/job-title` ~16ms.
+- 365 tests passed at the point Slice 3 was accepted.
+
+**Review-chat findings on Slice 3**
+- The average mutation (swapping to `//`) only proved floor division was
+  caught, not that half-even and half-up actually disagree -- some values
+  round the same way under both. I asked for cases that distinguish them
+  (5/2 → 2, 1/2 → 0, both differing from half-up's 3 and 1) and
+  mutation-checked those specifically.
+- The bucket mutation I ran was "un-clamp the last bucket" (let `range_max`
+  run past `max`) rather than the literal "last bucket excludes max" I'd
+  asked for. This was accepted as equivalent coverage of the same clamp,
+  and noted as a difference in wording rather than in substance.
+- Group ordering across the three dimensions turned out to be incidental
+  SQLite behaviour (it happens to return `GROUP BY` results sorted via a
+  temp B-tree), not a guarantee -- Postgres, which the schema is kept
+  compatible with, can use hash-based grouping with no such ordering at
+  all. I added an explicit `ORDER BY group_column` and tests inserting rows
+  in scrambled order for all three dimensions.
+- It was noted that there is no organisation-wide summary endpoint
+  (one set of aggregates across the whole company, not split by any
+  dimension). Deferred as a possible addition in a later slice; not
+  committed to.
+
+**Slice 4: auth + CORS**
+- Tokens: `itsdangerous.URLSafeTimedSerializer`, `max_age=3600`.
+  `BadSignature`/`SignatureExpired` both become a 401 with
+  `WWW-Authenticate: Bearer`.
+- Credential check: username and password are both encoded to UTF-8 bytes
+  before `hmac.compare_digest` (bytes never raise `TypeError` on non-ASCII
+  content; `str` can). Both `compare_digest` calls run unconditionally,
+  combined with `&`, never `and`. A spy test wraps `hmac.compare_digest`
+  with a `MagicMock` and asserts it was called twice even when the
+  username alone is wrong.
+- Three mutation checks, each performed once and reverted: inlining the
+  two `compare_digest` calls with `and` (so the second one could actually
+  be skipped, not just swapping the final combinator on already-computed
+  values) dropped the spy's call count from 2 to 1; dropping `max_age` from
+  the token-verification call let an "expired" token through; removing
+  `Depends(require_auth)` from `DELETE /employees/{id}` made its
+  "without auth" test fail (204 instead of 401), while the other two
+  routes' equivalent tests were unaffected.
+- Two real bugs found, neither in the core logic: my first tampered-token
+  test flipped the token's *last* character, which doesn't reliably
+  invalidate it -- base64's final character can have unused "slack" bits
+  when the encoded byte count isn't a multiple of 3, so more than one
+  character value decodes to the same bytes there; fixed by flipping the
+  *first* character instead. Separately, `app.main` has a module-level
+  `app = create_app()` (for `uvicorn app.main:app`), which runs once at
+  import time, before any pytest fixture exists -- once `AUTH_SECRET_KEY`
+  became required, this broke test collection itself. Fixed by having
+  `conftest.py` set `AUTH_SECRET_KEY`/`HR_USERNAME`/`HR_PASSWORD` via
+  `os.environ.setdefault` before importing `app.main` at all, not only via
+  the per-test fixture.
+- Deviations from the planned TDD order: the login route
+  (`app/api/auth.py`) and the CORS/fail-fast/`Depends(require_auth)`
+  wiring in `main.py` and `app/api/employees.py` were written before their
+  tests, on the judgment that pure wiring with no logic of its own didn't
+  need a red step. The comprehensive tests passed in full once written, so
+  nothing was masked, but this was not the clean TDD run I'd been
+  following in every other file.
+- `require_auth` is attached via `dependencies=[Depends(require_auth)]` on
+  the route decorator, not as a function parameter, since the handler
+  never uses its return value.
+
+**Review-chat finding on Slice 4**
+- CORS had only been tested against a simple `GET`. The review reproduced
+  in a scratch app that Starlette's default `CORSMiddleware` (no
+  `allow_methods`/`allow_headers` passed at all) rejects a `PUT` preflight
+  carrying an `Authorization` header with 400, since its bare defaults are
+  `allow_methods=("GET",)` and no headers allowed. Checking my own code
+  first, I found it was already passing `allow_methods=["*"]` and
+  `allow_headers=["*"]`, not Starlette's bare defaults, and confirmed
+  empirically that wildcard preflight already returned 200 -- so the
+  specific 400 the review reproduced didn't apply to this codebase as
+  written. I replaced the wildcards with an explicit list
+  (`["GET", "POST", "PUT", "DELETE"]` and
+  `["Authorization", "Content-Type"]`) anyway, added preflight tests for
+  `PUT`/`POST`/`DELETE` plus a disallowed-origin case, and mutation-checked
+  by reverting to Starlette's genuine bare defaults: the three write-method
+  preflight tests then failed with 400, exactly as the review had
+  predicted, while the disallowed-origin test was unaffected. Reverted.
+
+**Known limits accepted, recorded in design-notes.md:** no rate limiting or
+lockout on login attempts; no logout or revocation (a token is valid until
+it expires); rotating `AUTH_SECRET_KEY` invalidates every outstanding token
+at once.
+
+**Result:** 414 tests pass (`uv run pytest`, fresh run), ruff and strict
+mypy clean.
+
+**What I learned:** A test that passes proves nothing until it has been
+deliberately broken and watched to fail -- my own first average and
+group-ordering checks passed without proving what I thought they proved
+(floor division coinciding with half-even on some values; SQLite's
+incidental sort order). And a CORS test against a simple `GET` says
+nothing at all about whether the preflight for an actual write request
+would be rejected.
