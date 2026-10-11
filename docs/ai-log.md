@@ -605,7 +605,7 @@ incidental sort order). And a CORS test against a simple `GET` says
 nothing at all about whether the preflight for an actual write request
 would be rejected.
 
-### 2026-10-11 Session 5: backend deployment, S6 frontend, and a UI polish pass
+### 2026-10-11 Session 5: backend deployment, S6 frontend, and four rounds of UI polish
 
 **Tools:** Claude Code for implementation; a separate Claude chat for
 review of each report, deployment help, and debugging.
@@ -629,6 +629,13 @@ review of each report, deployment help, and debugging.
   restored the file, moved the real values into an ignored `backend/.env`,
   and added `.env` to `.gitignore` (commit `7b2f179`; `git check-ignore`
   confirmed it). Nothing secret was committed (verified with `git log -S`).
+- Later, a follow-up pass on `.env.example` itself (commit `74af2fa`): set
+  `CORS_ALLOWED_ORIGINS=http://localhost:5173` with a comment explaining
+  it's the local frontend's origin and production sets its own; confirmed
+  `DATABASE_URL` and the `AUTH_SECRET_KEY` generate-command comment were
+  already in place from earlier; checked docs/deployment.md and the
+  README for anything describing these vars (no mismatches found); and
+  confirmed `*.db` was already covered by `backend/.gitignore`.
 
 **2. S6: React frontend and employee table**
 - Stack: Vite, React, TypeScript strict, TanStack Query, MUI core `Table`
@@ -683,7 +690,11 @@ review of each report, deployment help, and debugging.
   gap, because local-currency salaries aren't comparable across
   employees paid in different currencies.
 
-**3. UI polish pass**
+**3. UI polish, four rounds (driven by my screenshot reviews -- Claude
+Code has no browser, so every round started from something I'd seen and
+it hadn't)**
+
+**Round 1**
 - Requested: a modern MUI theme, clearable filters, a full-width filter
   row (four equal columns on desktop, 2x2 on mobile), and sort
   affordances restricted to the three sortable columns.
@@ -708,12 +719,102 @@ review of each report, deployment help, and debugging.
   elements.
 - The app heading changed from "ACME Salary Manager" to "HR Salary
   Manager" at my request.
+- **Clear-button follow-up** (separate request, same round's theme): MUI
+  hiding the clear indicator until hover or focus meant touch devices --
+  no hover state at all -- had no visible way to clear an active filter.
+  Fixed with a theme-level `MuiAutocomplete` override forcing it visible
+  whenever the field has a value. Finding along the way: the component
+  tests had never actually wrapped `EmployeeTable` in the real app
+  `ThemeProvider`, only MUI's default theme -- so this (and any other
+  theme-dependent behaviour) had never really been under test. Fixed by
+  wrapping the test's render helper in the same theme the app uses. 55
+  tests; reverting the override back to hidden fails all 6
+  clear-button-dependent tests.
 - Still pending, not yet done: applying the Vercel build-command fix
   (`npm run build` -> `yarn build`) and the `VITE_API_URL` production
   environment variable in the actual Vercel dashboard, and re-verifying
   the live deployed site afterward.
 
-**4. A local-run bug (backend dev server, not application code)**
+**Round 2**
+- From my review: country codes should read as names, the standalone
+  employee count above the table was redundant with the pagination
+  footer's own total, and hire dates needed to never wrap.
+- Added `formatCountryName(code)` via `Intl.DisplayNames(['en'], { type:
+  'region' })`, falling back to the code itself when there's no display
+  name (tested directly: US/GB/IN resolve to their names, an unassigned
+  code like "XX" returns itself). Used for the Country filter's options
+  (sorted by name, matching on name *or* code when typing) and the
+  table's Country chip -- the value sent to the API is always still the
+  two-letter code. Mutation-checked: making the filter send the display
+  name instead of the code fails a dedicated test expecting `country=GB`.
+- Removed the "X employees" line above the table; the pagination
+  footer's own range/total was already showing it.
+- 52 tests.
+
+**Round 3**
+- From my screenshots: Department/Country chips and the Name header
+  weren't centred like the other headers, the pinned Name header looked a
+  different colour from the rest at 390px, salary figures needed to stay
+  digit-aligned while still sitting under their centred headers, Job
+  title rows had uneven height, and on a phone the next-page arrow was
+  cut off with the horizontal scrollbar overlapping the pagination row.
+- The pagination/horizontal-scroll bug turned out to be the toolbar
+  itself being wider than a 390px screen (rows-per-page label + select +
+  range text + prev/next all in one row), not pagination being nested
+  inside the scrolling table container (a DOM-structure test proved it
+  already wasn't, mutation-checked by moving it back inside and
+  confirming that test fails). Fixed by hiding the rows-per-page control
+  below the `md` breakpoint.
+- Salary figures: right-aligned inside a fixed-120px box so digits line
+  up down the column, with the box itself centred under the header.
+  58 tests.
+
+**Round 4**
+- From my screenshots: round 3's fixes had pushed the table past its
+  container at desktop widths -- a horizontal scrollbar and a clipped
+  Hire date column even at 1920px, which hadn't been there before round
+  3's per-column minWidths.
+- Root cause: `minWidth`/`maxWidth` on individual columns can't stop a
+  table from exceeding its container; only `table-layout: fixed` with
+  percentage widths can. Fixed in the order I asked for: raised the
+  content container's cap from MUI's default 1200px to 1680px; cut cell
+  horizontal padding from 16px to 12px; switched the table to
+  `table-layout: fixed` with an explicit percentage budget per column at
+  the `lg` breakpoint (1200px) and up, keeping the existing auto-layout/
+  horizontal-scroll/pinned-Name behaviour below it; added ellipsis plus a
+  full value in a `title` attribute to Name/Email/Job title (mutation-
+  checked: removing the attribute fails the new truncation test); shrank
+  the salary figure's fixed box from 120px to a 7.5em minWidth now that
+  the column itself is width-constrained. 59 tests.
+- Name header background: I asked Claude Code not to guess again and to
+  read the actual theme and MUI source. It found every header cell,
+  pinned or not, already drew its background from the exact same MUI
+  `stickyHeader` rule (`background.default`, fully opaque, no alpha
+  anywhere in the chain) -- round 3's explicit override on just the Name
+  cell resolved to the identical literal value, so it couldn't have been
+  the cause of a visible difference. Removed as redundant rather than
+  replaced with a new guess, leaving one shared rule that can't diverge
+  from itself.
+  **TODO (me):** confirm from the next screenshot whether the Name header
+  still looks different -- if it does, the cause isn't in this code and
+  needs to be found visually.
+- Column-width budget used (percentages of the table, estimated from
+  character counts, not measured): Name 12%, Email 19%, Job title 17%,
+  Department 10%, Country 12%, Salary 10%, Salary (USD) 10%, Hire date
+  9% (sums to 99%). Also changed the table's own scroll-area height from
+  a flat 560px to `calc(100vh - 320px)` at `lg`+, from an *estimate* of
+  the surrounding chrome (AppBar + container padding + filters card +
+  pagination, ~274px, rounded up), so the page itself wouldn't also need
+  to scroll on top of the table's own scroll area.
+  **TODO (me):** confirm at 1280px, 1440px, 1920px, and 390px that there's
+  no horizontal scrollbar at the three desktop widths, that the column
+  widths actually look right (not just summing to 99%), and that the
+  `320px` constant doesn't need tuning -- these are estimates, not
+  measurements.
+- Deferred, not done: the >500kB JS bundle-size warning from `vite
+  build` -- plan to lazy-load the insights route once it exists in S7.
+
+**4. Local-run bugs (two, both backend)**
 - Running the backend locally so Claude Code could point a dev frontend
   at real data (it has no browser, so this was the closest it could get
   to checking its own UI work) hit the same "AUTH_SECRET_KEY environment
@@ -737,10 +838,64 @@ review of each report, deployment help, and debugging.
   the manual verification step, competing with the test runner's own Vite
   instance over the same dependency cache. Killing the leftover dev
   server brought run times back to normal immediately.
+- **Second bug, more serious:** copying `.env.example` to `.env` and
+  leaving `DATABASE_URL=` blank crashed startup with
+  `sqlalchemy.exc.ArgumentError` -- a plain `os.environ.get(name,
+  default)` only falls back to `default` when the key is *absent*, not
+  when it's present but blank, and `.env.example`'s own comment claiming
+  it "defaults to local SQLite if unset" was therefore wrong for this
+  exact case. Fixed with one shared `app.env.get_env(name)` helper, now
+  used for every environment read in the backend: `None` for unset,
+  empty, or whitespace-only, otherwise the value. Beyond fixing the
+  crash, this closed a real correctness gap, not just a startup one:
+  `HR_USERNAME=""` previously meant `expected_username` was `""`, not
+  `None`, so a blank env var plus a blank *submitted* username could
+  authenticate. `SEED_ON_EMPTY` and `CORS_ALLOWED_ORIGINS` turned out to
+  already handle a blank value correctly before this fix (added
+  regression tests for those rather than fixes). 9 tests fail when the
+  helper is reverted to a plain `os.environ.get`; 429 backend tests pass
+  overall. Verified directly, not just by the test suite: a fresh copy
+  of `.env.example` with the three required values filled in boots and
+  answers `/health` with 200; a copy with them left blank fails at
+  startup with the same clear `AUTH_SECRET_KEY` message as an unset one,
+  not a confusing crash.
+
+**5. Review-chat contributions on the UI polish rounds**
+- Spotted directly from my screenshots, each driving the next round:
+  the mobile pagination arrow cut off and overlapped by the scrollbar;
+  Department/Country chips not centred under their (centred) headers;
+  salary column headers sitting off-centre from their own figures; and
+  the desktop horizontal scrollbar/clipped Hire date column that round 4
+  fixed.
+- Also used for the live-deployment checks noted in sections 1 and 2
+  above (Render env vars and curl verification; the CORS
+  preflight/deployed-commit mismatch, still open).
+
+**Known limits and open items, as of this session:**
+- The backend database resets on every restart (free-tier Render disk is
+  not persistent) -- a known, accepted limit, not a bug.
+- No rate limiting or lockout on login attempts (carried over from
+  Session 4, still true).
+- Render's health check path is `/health`.
+- Still open: the possible stale Render deployment (CORS headers not
+  matching the latest local commit, flagged in section 2); the Vercel
+  dashboard settings (section 3, round 1); the two round-4 TODOs above.
+
+**Result (fresh runs, end of this session):** `uv run pytest` --
+429 passed. `yarn test` -- 59 passed (10 test files).
 
 **What I learned:** `uv run`'s environment handling doesn't match a plain
 shell's -- it doesn't read `.env` by default, and `--env-file` treats a
 blank value as "set to empty", which isn't the same thing the
-application's own fallback logic assumes. And a dev server left running
-in the background isn't always harmless -- it can silently slow down an
-unrelated test or build run in the same project by 10-100x.
+application's own fallback logic assumes. A dev server left running in
+the background isn't always harmless -- it can silently slow down an
+unrelated test or build run in the same project by 10-100x. A green test
+suite (414 tests, at the time) can still miss a real startup bug if none
+of those tests actually boot the app from a copy of the example file
+itself, rather than from hand-set environment variables. And a passing
+layout test in jsdom proves a style rule exists, not that it renders
+correctly -- stacked per-column minWidths can silently overflow a
+container in a way no test catches, a hover-only control isn't
+accessible on a touch device regardless of what the DOM says, and a
+sizing constant derived from arithmetic needs to be labelled an estimate
+until someone actually measures the rendered page.
