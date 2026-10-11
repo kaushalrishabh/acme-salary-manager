@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from app.main import create_app
+from app.main import create_app, get_cors_allowed_origins
 from app.models import CurrencyRate, Employee
 from app.reference_data import CURRENCIES
 
@@ -128,6 +128,17 @@ def test_cors_allows_nothing_when_the_env_var_is_unset(
         response = client.get("/health", headers={"Origin": "https://example.com"})
 
     assert "access-control-allow-origin" not in response.headers
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_get_cors_allowed_origins_is_empty_when_set_but_blank(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # A literal `CORS_ALLOWED_ORIGINS=` left in a copied .env.example must
+    # behave like unset (no origins allowed), not like an empty-string
+    # origin ending up in the list.
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", value)
+    assert get_cors_allowed_origins() == []
 
 
 # --- CORS: preflight (OPTIONS) for the write methods -----------------------------------

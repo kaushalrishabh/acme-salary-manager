@@ -71,6 +71,25 @@ def test_verify_credentials_returns_false_when_hr_password_is_unset(
     assert auth.verify_credentials("hr", "test-only-password") is False
 
 
+@pytest.mark.parametrize("value", ["", "   "])
+def test_verify_credentials_treats_blank_hr_username_as_unset(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    # A literal `HR_USERNAME=` left in a copied .env.example is "set" as
+    # far as os.environ is concerned. Without this, submitting that same
+    # blank value as the username would wrongly succeed.
+    monkeypatch.setenv("HR_USERNAME", value)
+    assert auth.verify_credentials(value, "test-only-password") is False
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_verify_credentials_treats_blank_hr_password_as_unset(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("HR_PASSWORD", value)
+    assert auth.verify_credentials("hr", value) is False
+
+
 # --- get_auth_secret_key ---------------------------------------------------------------
 
 
@@ -80,6 +99,15 @@ def test_get_auth_secret_key_returns_the_env_value() -> None:
 
 def test_get_auth_secret_key_raises_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AUTH_SECRET_KEY", raising=False)
+    with pytest.raises(RuntimeError):
+        auth.get_auth_secret_key()
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_get_auth_secret_key_raises_when_blank(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    # "" was already covered by `not key`, but a whitespace-only value is
+    # truthy in Python (`not "   "` is False) and needs the same fallback.
+    monkeypatch.setenv("AUTH_SECRET_KEY", value)
     with pytest.raises(RuntimeError):
         auth.get_auth_secret_key()
 

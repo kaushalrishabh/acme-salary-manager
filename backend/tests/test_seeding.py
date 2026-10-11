@@ -160,7 +160,7 @@ def test_seed_on_empty_enabled_accepts_truthy_values(
     assert seed_on_empty_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["0", "false", "no", "off", "", "anything-else"])
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "", "   ", "anything-else"])
 def test_seed_on_empty_enabled_treats_other_values_as_false(
     monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
