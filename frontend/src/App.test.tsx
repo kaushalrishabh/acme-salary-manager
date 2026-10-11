@@ -6,8 +6,6 @@ describe('App', () => {
   it('renders the app title as a heading', () => {
     render(<App />)
 
-    expect(
-      screen.getByRole('heading', { name: 'ACME Salary Manager' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'ACME Salary Manager' })).toBeInTheDocument()
   })
 })
