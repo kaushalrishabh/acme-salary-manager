@@ -354,6 +354,68 @@ so far:
   Slice 4 ships** -- the live URL is public, and every write endpoint is
   open to anyone until then.
 
+### Slice 3: insights
+
+- **Two queries per dimension, always.** One `GROUP BY` for
+  count/sum/min/max; one bulk `(group_value, salary)` fetch, grouped in
+  Python with `itertools.groupby` in a single pass. Verified with a
+  SQLAlchemy `before_execute` listener counting real statements per
+  request: exactly 2, for all three endpoints.
+- **The bulk fetch's `ORDER BY` has two jobs, not one.** The primary key
+  (`group_column`) is what makes `itertools.groupby` correct at all --
+  it only merges *adjacent* equal keys, so without it, rows interleaved by
+  insertion order would split one group into several. The secondary key
+  (`salary_column`) is what gives median its "middle value" meaning.
+  Mutation-checked: dropping the secondary sort key left grouping correct
+  but broke median (a 3-row group inserted out of salary order returned
+  the wrong middle value); the permanent regression test for this
+  (`test_median_is_correct_even_when_rows_are_inserted_out_of_salary_order`)
+  only exists because the original pure `compute_median` tests pass an
+  already-sorted list directly and couldn't have caught this.
+- **Units, fixed per dimension, not per row:** country groups use
+  `annual_gross_salary_minor`, formatted with *that country's* `minor_unit`
+  (never ambiguous within a group, since currency is 1:1 with country) and
+  carry a `currency` field. Department and job-title groups use
+  `annual_gross_salary_usd_cents`, formatted with `minor_unit=2` always,
+  and their response schemas have no `currency` field at all -- not `null`,
+  genuinely absent, enforced by using three separate Pydantic models
+  (`CountryInsight` vs `DepartmentInsight`/`JobTitleInsight`) rather than
+  one shared schema with an optional field.
+- **Average:** `round_half_even(sum, count)`, the same helper as
+  conversion. Mutation-checked: swapping it for `//` passed two of three
+  average tests by coincidence (floor and half-even agree when the result
+  isn't a genuine tie) but failed the one test built specifically to
+  disagree with floor division (7/2 -- floor gives 3, half-even ties to 4).
+- **Median:** odd count is the sorted middle value; even count is
+  `round_half_even(a + b, 2)` of the two middle values. The even-count tie
+  test (100 and 101 cents) is chosen so naive "round half up" (101) and
+  round-half-even (100, since 100 is even) actually disagree -- a tie
+  picked at random usually wouldn't expose this.
+- **Buckets: ceiling width, ten always.** `n = max - min + 1`,
+  `width = (n + 9) // 10`; bucket index for value `v` is
+  `(v - min) // width`, always `0..9`. Every bucket's `range_max` is
+  exclusive except the last *non-empty* bucket, clamped to `max`
+  (inclusive); buckets past that are trailing, `range_min == range_max ==
+  max`, `count == 0`. `min == max` needs no special case (width 1, bucket
+  0 takes everyone). Mutation-checked: un-clamping the last bucket (letting
+  `range_max` run past `max`) failed 4 of 5 bucket tests, all of them
+  checking that exact clamp.
+- **Differential-tested at 10,000 seeded rows:** every group's
+  count/min/max/average/median/distribution recomputed independently --
+  Python's `decimal` module (`ROUND_HALF_EVEN`) instead of the hand-rolled
+  integer `round_half_even`, and a separate reimplementation of the bucket
+  rule instead of calling `compute_buckets` -- and compared for exact
+  equality against the live endpoint output, for all three dimensions.
+  (The independent bucket reimplementation shares the same documented rule
+  as the real one, so it would not catch a shared misreading of the rule
+  itself -- only an implementation bug, such as an off-by-one or a wrong
+  clamp, in one but not the other.)
+- **Measured at 10,000 rows:** `/insights/country` ~15ms,
+  `/insights/department` ~15ms, `/insights/job-title` ~16ms per request
+  (5-run average each), comfortably under the 500ms success criterion.
+- **Public, no auth check.** Read-only aggregate data; consistent with
+  `GET /employees` also being public.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
