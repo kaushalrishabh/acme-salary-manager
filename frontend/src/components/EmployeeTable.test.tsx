@@ -44,10 +44,13 @@ describe('EmployeeTable', () => {
     expect(screen.getByText('Grace Hopper')).toBeInTheDocument()
   })
 
-  it('shows the total employee count', async () => {
+  it('does not show a standalone employee count above the table; the pagination footer still shows the total', async () => {
+    captureEmployeesRequests() // total: 100, distinct from defaultEmployees.length
     renderTable()
+    await screen.findByText('Ada Lovelace')
 
-    expect(await screen.findByText(/2 employees/i)).toBeInTheDocument()
+    expect(screen.queryByText(/\d[\d,]*\s+employees/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/of 100/i)).toBeInTheDocument()
   })
 
   it('changing the page sends a request for that page', async () => {
@@ -103,9 +106,10 @@ describe('EmployeeTable', () => {
     await user.click(screen.getByRole('button', { name: /next page/i }))
     await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'))
 
-    // Changing the country filter must reset back to page 1.
+    // Changing the country filter must reset back to page 1. The dropdown
+    // shows the full country name; the request still carries the code.
     await user.click(screen.getByLabelText(/country/i))
-    await user.click(await screen.findByRole('option', { name: 'US' }))
+    await user.click(await screen.findByRole('option', { name: 'United States' }))
 
     await waitFor(() => {
       const last = requests.at(-1)
@@ -220,7 +224,7 @@ describe('EmployeeTable filters', () => {
     server.use(
       http.get(`${API_BASE_URL}/employees/options`, () =>
         HttpResponse.json({
-          countries: ['IN', 'US'],
+          countries: ['GB', 'IN', 'US'],
           departments: ['Engineering', 'Sales'],
           job_titles: ['Engineer', 'Sales Manager'],
         }),
@@ -256,27 +260,30 @@ describe('EmployeeTable filters', () => {
   const AUTOCOMPLETE_FILTERS = [
     {
       label: /country/i,
-      optionName: 'US',
+      optionName: 'United Kingdom', // shown/clicked in the dropdown
       paramName: 'country',
+      paramValue: 'GB', // the code that must reach the API
       clearLabel: /clear country filter/i,
     },
     {
       label: /department/i,
       optionName: 'Engineering',
       paramName: 'department',
+      paramValue: 'Engineering',
       clearLabel: /clear department filter/i,
     },
     {
       label: /job title/i,
       optionName: 'Engineer',
       paramName: 'job_title',
+      paramValue: 'Engineer',
       clearLabel: /clear job title filter/i,
     },
   ]
 
   it.each(AUTOCOMPLETE_FILTERS)(
     '$paramName filter: clear button is reachable by name, clears the filter, drops the param, and resets to page 1',
-    async ({ label, optionName, paramName, clearLabel }) => {
+    async ({ label, optionName, paramName, paramValue, clearLabel }) => {
       const requests = captureEmployeesRequests()
       const user = userEvent.setup()
       renderTable()
@@ -284,7 +291,7 @@ describe('EmployeeTable filters', () => {
 
       await user.click(screen.getByLabelText(label))
       await user.click(await screen.findByRole('option', { name: optionName }))
-      await waitFor(() => expect(requests.at(-1)?.searchParams.get(paramName)).toBe(optionName))
+      await waitFor(() => expect(requests.at(-1)?.searchParams.get(paramName)).toBe(paramValue))
 
       await user.click(screen.getByRole('button', { name: /next page/i }))
       await waitFor(() => expect(requests.at(-1)?.searchParams.get('page')).toBe('2'))
@@ -311,8 +318,38 @@ describe('EmployeeTable filters', () => {
     await userEvent.setup().click(await screen.findByLabelText(/country/i))
 
     const listbox = await screen.findByRole('listbox')
-    expect(within(listbox).getByRole('option', { name: 'US' })).toBeInTheDocument()
-    expect(within(listbox).getByRole('option', { name: 'IN' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'United States' })).toBeInTheDocument()
+    expect(within(listbox).getByRole('option', { name: 'India' })).toBeInTheDocument()
+  })
+
+  it('country filter shows the full country name but sends the two-letter code to the API', async () => {
+    const requests = captureEmployeesRequests()
+    const user = userEvent.setup()
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    await user.click(screen.getByLabelText(/country/i))
+    await user.click(await screen.findByRole('option', { name: 'United Kingdom' }))
+
+    await waitFor(() => {
+      expect(requests.at(-1)?.searchParams.get('country')).toBe('GB')
+    })
+  })
+
+  it('typing a partial country name or its code both filter to the matching option', async () => {
+    const user = userEvent.setup()
+    renderTable()
+    const countryInput = await screen.findByLabelText(/country/i)
+
+    await user.click(countryInput)
+    await user.type(countryInput, 'ind')
+    let listbox = await screen.findByRole('listbox')
+    expect(within(listbox).getByRole('option', { name: 'India' })).toBeInTheDocument()
+
+    await user.clear(countryInput)
+    await user.type(countryInput, 'IN')
+    listbox = await screen.findByRole('listbox')
+    expect(within(listbox).getByRole('option', { name: 'India' })).toBeInTheDocument()
   })
 })
 
