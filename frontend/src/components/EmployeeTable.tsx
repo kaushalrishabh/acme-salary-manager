@@ -109,18 +109,15 @@ const hireDateCellSx = {
   minWidth: { xs: 130, lg: 0 },
   width: { lg: COLUMN_WIDTH_LG.hireDate },
 }
-const salaryColumnSx = { ...nowrapSx, width: { lg: COLUMN_WIDTH_LG.salary } }
-const salaryUsdColumnSx = { ...nowrapSx, width: { lg: COLUMN_WIDTH_LG.salaryUsd } }
-// Round 3 used a fixed 120px inline-block so every figure's last digit
-// lines up on the same right edge; now that the column itself is
-// width-constrained at lg+, a smaller, font-relative size keeps that same
-// alignment without needing as much space.
-const SALARY_FIGURE_MIN_WIDTH = '7.5em'
-const salaryFigureSx = {
-  display: 'inline-block' as const,
-  minWidth: SALARY_FIGURE_MIN_WIDTH,
-  textAlign: 'right' as const,
+// The figure is just centred text like every other body cell now (no
+// fixed-width inline-block -- removed per S7's table-alignment pass, which
+// centres every column uniformly); tabular-nums still keeps digit widths
+// consistent, it just no longer right-edge-aligns across rows.
+const salaryColumnSx = { ...nowrapSx, ...numericCellSx, width: { lg: COLUMN_WIDTH_LG.salary } }
+const salaryUsdColumnSx = {
+  ...nowrapSx,
   ...numericCellSx,
+  width: { lg: COLUMN_WIDTH_LG.salaryUsd },
 }
 // Centres the sort label + icon as a unit within the (centred) header
 // cell, rather than relying solely on the cell's text-align to centre an
@@ -398,15 +395,16 @@ export function EmployeeTable() {
               {employees.map((employee) => (
                 <TableRow hover key={employee.id}>
                   <TableCell
+                    align="center"
                     title={employee.full_name}
                     sx={{ ...stickyBodyCellSx, ...ellipsisSx, ...nameCellWidthSx }}
                   >
                     {employee.full_name}
                   </TableCell>
-                  <TableCell title={employee.email} sx={emailCellSx}>
+                  <TableCell align="center" title={employee.email} sx={emailCellSx}>
                     {employee.email}
                   </TableCell>
-                  <TableCell title={employee.job_title} sx={jobTitleCellSx}>
+                  <TableCell align="center" title={employee.job_title} sx={jobTitleCellSx}>
                     {employee.job_title}
                   </TableCell>
                   <TableCell align="center" sx={departmentCellSx}>
@@ -420,14 +418,10 @@ export function EmployeeTable() {
                     />
                   </TableCell>
                   <TableCell align="center" sx={salaryColumnSx}>
-                    <Box component="span" sx={salaryFigureSx}>
-                      {formatMoney(employee.annual_gross_salary, employee.currency)}
-                    </Box>
+                    {formatMoney(employee.annual_gross_salary, employee.currency)}
                   </TableCell>
                   <TableCell align="center" sx={salaryUsdColumnSx}>
-                    <Box component="span" sx={salaryFigureSx}>
-                      {formatMoney(employee.annual_gross_salary_usd, 'USD')}
-                    </Box>
+                    {formatMoney(employee.annual_gross_salary_usd, 'USD')}
                   </TableCell>
                   <TableCell align="center" sx={hireDateCellSx}>
                     {formatDateOnly(employee.hire_date)}
