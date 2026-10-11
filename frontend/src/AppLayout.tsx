@@ -6,9 +6,30 @@ import Button from '@mui/material/Button'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import { Link as RouterLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+
+import { onSessionExpired } from './auth/authStore'
+import { useAuth } from './auth/useAuth'
 
 export function AppLayout() {
+  const { isLoggedIn, logout } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    // The API client calls notifySessionExpired() when a write's token is
+    // rejected with 401; this is the one place that turns that into a
+    // redirect, since it's the one component on every route that can use
+    // useNavigate/useLocation.
+    return onSessionExpired(() => {
+      navigate('/login', {
+        state: { from: location.pathname, sessionExpired: true },
+        replace: true,
+      })
+    })
+  }, [navigate, location.pathname])
+
   return (
     <>
       <AppBar position="static">
@@ -26,6 +47,15 @@ export function AppLayout() {
           <Button component={RouterLink} to="/insights" color="inherit">
             Insights
           </Button>
+          {isLoggedIn ? (
+            <Button color="inherit" onClick={logout}>
+              Logout
+            </Button>
+          ) : (
+            <Button component={RouterLink} to="/login" color="inherit">
+              Login
+            </Button>
+          )}
         </Toolbar>
       </AppBar>
       {/* maxWidth={false} + sx.maxWidth (not maxWidth="xl", which caps at
