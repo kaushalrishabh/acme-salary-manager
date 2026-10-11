@@ -20,6 +20,7 @@ import {
   TableSortLabel,
   TextField,
 } from '@mui/material'
+import { tablePaginationClasses } from '@mui/material/TablePagination'
 import type { ChangeEvent } from 'react'
 import { useState } from 'react'
 
@@ -40,19 +41,48 @@ const COLUMN_COUNT = 8
 const TABLE_MAX_HEIGHT = 560
 
 // Sticky left column (the Name header/cells) so it stays visible while the
-// table scrolls horizontally on narrow screens. The header cell deliberately
-// has no explicit background here: it inherits MUI's own stickyHeader
-// default (theme.palette.background.default), the same token every other
-// header cell gets -- the body cells below need their own explicit opaque
+// table scrolls horizontally on narrow screens. The header cell's background
+// is set explicitly to the same token every other header cell gets from
+// MUI's own stickyHeader default (background.default) -- not left to
+// inherit it, since a sticky-positioned cell didn't reliably pick up the
+// same default in practice. Body cells need their own explicit opaque
 // background instead, so scrolled-under content doesn't show through them.
 const stickyColumnPositionSx = {
   position: 'sticky' as const,
   left: 0,
 }
+const stickyHeaderCellSx = {
+  ...stickyColumnPositionSx,
+  zIndex: 3,
+  backgroundColor: 'background.default',
+}
 const stickyBodyCellSx = { ...stickyColumnPositionSx, backgroundColor: 'background.paper' }
 const numericCellSx = { fontVariantNumeric: 'tabular-nums' as const }
 const nowrapSx = { whiteSpace: 'nowrap' as const }
 const hireDateCellSx = { whiteSpace: 'nowrap' as const, minWidth: 130 }
+const jobTitleCellSx = { whiteSpace: 'nowrap' as const, minWidth: 220 }
+const emailCellSx = {
+  maxWidth: 220,
+  overflow: 'hidden' as const,
+  textOverflow: 'ellipsis' as const,
+  whiteSpace: 'nowrap' as const,
+}
+// A fixed width so every row's figure lines up on the same right edge
+// (digits/decimals stay aligned down the column), while the box itself,
+// being centred by the cell's own centred alignment, sits under the
+// centred "Salary"/"Salary (USD)" header as a whole.
+const SALARY_FIGURE_WIDTH = 120
+const salaryFigureSx = {
+  display: 'inline-block' as const,
+  width: SALARY_FIGURE_WIDTH,
+  textAlign: 'right' as const,
+  ...numericCellSx,
+}
+// Centres the sort label + icon as a unit within the (centred) header
+// cell, rather than relying solely on the cell's text-align to centre an
+// inline-flex element -- more robust across browsers, especially for the
+// sticky-positioned Name column.
+const sortLabelSx = { width: '100%', justifyContent: 'center' as const }
 
 export function EmployeeTable() {
   const [searchInput, setSearchInput] = useState('')
@@ -239,17 +269,20 @@ export function EmployeeTable() {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell align="center" sx={{ ...stickyColumnPositionSx, zIndex: 3 }}>
+                <TableCell align="center" sx={stickyHeaderCellSx}>
                   <TableSortLabel
                     active={sortField === 'full_name'}
                     direction={sortField === 'full_name' ? sortOrder : 'asc'}
                     onClick={() => handleSortClick('full_name')}
+                    sx={sortLabelSx}
                   >
                     Name
                   </TableSortLabel>
                 </TableCell>
                 <TableCell align="center">Email</TableCell>
-                <TableCell align="center">Job title</TableCell>
+                <TableCell align="center" sx={jobTitleCellSx}>
+                  Job title
+                </TableCell>
                 <TableCell align="center">Department</TableCell>
                 <TableCell align="center">Country</TableCell>
                 {/* Local-currency salary is never sortable: values are in
@@ -264,6 +297,7 @@ export function EmployeeTable() {
                     active={sortField === 'salary'}
                     direction={sortField === 'salary' ? sortOrder : 'asc'}
                     onClick={() => handleSortClick('salary')}
+                    sx={sortLabelSx}
                   >
                     Salary (USD)
                   </TableSortLabel>
@@ -273,6 +307,7 @@ export function EmployeeTable() {
                     active={sortField === 'hire_date'}
                     direction={sortField === 'hire_date' ? sortOrder : 'asc'}
                     onClick={() => handleSortClick('hire_date')}
+                    sx={sortLabelSx}
                   >
                     Hire date
                   </TableSortLabel>
@@ -302,25 +337,31 @@ export function EmployeeTable() {
               {employees.map((employee) => (
                 <TableRow hover key={employee.id}>
                   <TableCell sx={stickyBodyCellSx}>{employee.full_name}</TableCell>
-                  <TableCell>{employee.email}</TableCell>
-                  <TableCell>{employee.job_title}</TableCell>
-                  <TableCell>
+                  <TableCell sx={emailCellSx}>{employee.email}</TableCell>
+                  <TableCell sx={jobTitleCellSx}>{employee.job_title}</TableCell>
+                  <TableCell align="center">
                     <Chip label={employee.department} size="small" variant="outlined" />
                   </TableCell>
-                  <TableCell>
+                  <TableCell align="center">
                     <Chip
                       label={formatCountryName(employee.country)}
                       size="small"
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell align="right" sx={{ ...numericCellSx, ...nowrapSx }}>
-                    {formatMoney(employee.annual_gross_salary, employee.currency)}
+                  <TableCell align="center" sx={nowrapSx}>
+                    <Box component="span" sx={salaryFigureSx}>
+                      {formatMoney(employee.annual_gross_salary, employee.currency)}
+                    </Box>
                   </TableCell>
-                  <TableCell align="right" sx={{ ...numericCellSx, ...nowrapSx }}>
-                    {formatMoney(employee.annual_gross_salary_usd, 'USD')}
+                  <TableCell align="center" sx={nowrapSx}>
+                    <Box component="span" sx={salaryFigureSx}>
+                      {formatMoney(employee.annual_gross_salary_usd, 'USD')}
+                    </Box>
                   </TableCell>
-                  <TableCell sx={hireDateCellSx}>{formatDateOnly(employee.hire_date)}</TableCell>
+                  <TableCell align="center" sx={hireDateCellSx}>
+                    {formatDateOnly(employee.hire_date)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -334,6 +375,19 @@ export function EmployeeTable() {
           rowsPerPage={pageSize}
           onRowsPerPageChange={handlePageSizeChange}
           rowsPerPageOptions={[25, 50, 100]}
+          // At xs, the full toolbar (rows-per-page label + select, range
+          // text, prev/next buttons) is wider than a 390px viewport,
+          // clipping the next-page button. Hide the rows-per-page control
+          // below md, leaving only the range text and prev/next buttons.
+          sx={{
+            [`& .${tablePaginationClasses.selectLabel}, & .${tablePaginationClasses.input}`]: {
+              display: { xs: 'none', md: 'flex' },
+            },
+            [`& .${tablePaginationClasses.toolbar}`]: {
+              flexWrap: 'wrap',
+              justifyContent: { xs: 'space-between', md: 'flex-end' },
+            },
+          }}
         />
       </Paper>
     </Box>
