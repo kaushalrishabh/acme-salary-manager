@@ -1,6 +1,8 @@
 import { HttpResponse, http } from 'msw'
 
+import type { LoginRequest, LoginResponse } from '../types/auth'
 import type { Employee, EmployeeListResponse, EmployeeOptions } from '../types/employee'
+import type { CountryMeta } from '../types/meta'
 
 // Keep this in sync with VITE_API_URL used in tests (see src/test/setup.ts).
 export const API_BASE_URL = 'http://api.test'
@@ -44,6 +46,16 @@ export const defaultOptions: EmployeeOptions = {
   job_titles: ['Engineer', 'Sales Manager'],
 }
 
+export const defaultCountries: CountryMeta[] = [
+  { code: 'IN', currency: 'INR', minor_unit: 2 },
+  { code: 'JP', currency: 'JPY', minor_unit: 0 },
+  { code: 'US', currency: 'USD', minor_unit: 2 },
+]
+
+export const TEST_USERNAME = 'hr'
+export const TEST_PASSWORD = 'test-password'
+export const TEST_TOKEN = 'test-token'
+
 export const handlers = [
   http.get(`${API_BASE_URL}/employees`, () => {
     const body: EmployeeListResponse = {
@@ -55,4 +67,13 @@ export const handlers = [
     return HttpResponse.json(body)
   }),
   http.get(`${API_BASE_URL}/employees/options`, () => HttpResponse.json(defaultOptions)),
+  http.get(`${API_BASE_URL}/meta/countries`, () => HttpResponse.json(defaultCountries)),
+  http.post(`${API_BASE_URL}/auth/login`, async ({ request }) => {
+    const body = (await request.json()) as LoginRequest
+    if (body.username === TEST_USERNAME && body.password === TEST_PASSWORD) {
+      const response: LoginResponse = { token: TEST_TOKEN, expires_in: 3600 }
+      return HttpResponse.json(response)
+    }
+    return HttpResponse.json({ detail: 'Invalid username or password' }, { status: 401 })
+  }),
 ]
