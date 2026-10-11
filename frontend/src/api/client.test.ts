@@ -81,6 +81,12 @@ describe('apiFetch', () => {
     expect(error.status).toBe(0)
   })
 
+  it('returns without trying to parse a body for a 204 No Content response', async () => {
+    mockFetchOnce(new Response(null, { status: 204 }))
+
+    await expect(apiFetch('/employees/1', { method: 'DELETE' })).resolves.toBeUndefined()
+  })
+
   it('sends the Authorization header on POST/PUT/DELETE when a token is set', async () => {
     authStore.setToken('tok123')
     let capturedHeaders: Record<string, string> | undefined
