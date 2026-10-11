@@ -11,6 +11,7 @@ import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-rout
 
 import { onSessionExpired } from './auth/authStore'
 import { useAuth } from './auth/useAuth'
+import { GlobalSnackbar } from './notifications/GlobalSnackbar'
 
 export function AppLayout() {
   const { isLoggedIn, logout } = useAuth()
@@ -65,6 +66,7 @@ export function AppLayout() {
       <Container component="main" maxWidth={false} sx={{ maxWidth: 1680, py: 4 }}>
         <Outlet />
       </Container>
+      <GlobalSnackbar />
     </>
   )
 }
