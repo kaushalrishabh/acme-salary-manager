@@ -83,7 +83,10 @@ export const theme = createTheme({
     },
     MuiTableCell: {
       styleOverrides: {
-        root: { borderBottomColor: slate[200] },
+        // Default padding is 16px all round; horizontal space is tighter
+        // on a wide, many-column table, so only the horizontal side is
+        // reduced, to ~12px.
+        root: { borderBottomColor: slate[200], padding: '16px 12px' },
       },
     },
     MuiTableSortLabel: {

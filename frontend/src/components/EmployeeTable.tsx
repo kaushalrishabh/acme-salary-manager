@@ -41,12 +41,18 @@ const COLUMN_COUNT = 8
 const TABLE_MAX_HEIGHT = 560
 
 // Sticky left column (the Name header/cells) so it stays visible while the
-// table scrolls horizontally on narrow screens. The header cell's background
-// is set explicitly to the same token every other header cell gets from
-// MUI's own stickyHeader default (background.default) -- not left to
-// inherit it, since a sticky-positioned cell didn't reliably pick up the
-// same default in practice. Body cells need their own explicit opaque
-// background instead, so scrolled-under content doesn't show through them.
+// table scrolls horizontally on narrow screens. The header cell deliberately
+// sets no background of its own: every TableCell inside a <Table
+// stickyHeader> automatically gets position:sticky + background.default
+// from MUI's own internals (see node_modules/@mui/material/TableCell), so
+// all 8 header cells -- Name included -- get that color from the exact same
+// rule. An earlier round added an explicit background.default override
+// here on the theory that a sticky cell wasn't reliably inheriting it; that
+// turned out not to fix the reported mismatch, and re-reading the source
+// confirms both paths resolve to the identical literal value (#f1f5f9) --
+// so the duplicate was removed rather than kept "just in case": one shared
+// rule can't diverge from itself. (zIndex:3 is still needed, to stack above
+// the other sticky header cells -- zIndex:2 -- while scrolled horizontally.)
 const stickyColumnPositionSx = {
   position: 'sticky' as const,
   left: 0,
@@ -54,27 +60,65 @@ const stickyColumnPositionSx = {
 const stickyHeaderCellSx = {
   ...stickyColumnPositionSx,
   zIndex: 3,
-  backgroundColor: 'background.default',
 }
 const stickyBodyCellSx = { ...stickyColumnPositionSx, backgroundColor: 'background.paper' }
 const numericCellSx = { fontVariantNumeric: 'tabular-nums' as const }
 const nowrapSx = { whiteSpace: 'nowrap' as const }
-const hireDateCellSx = { whiteSpace: 'nowrap' as const, minWidth: 130 }
-const jobTitleCellSx = { whiteSpace: 'nowrap' as const, minWidth: 220 }
-const emailCellSx = {
-  maxWidth: 220,
+const ellipsisSx = {
+  whiteSpace: 'nowrap' as const,
   overflow: 'hidden' as const,
   textOverflow: 'ellipsis' as const,
-  whiteSpace: 'nowrap' as const,
 }
-// A fixed width so every row's figure lines up on the same right edge
-// (digits/decimals stay aligned down the column), while the box itself,
-// being centred by the cell's own centred alignment, sits under the
-// centred "Salary"/"Salary (USD)" header as a whole.
-const SALARY_FIGURE_WIDTH = 120
+
+// Column width budget at lg (1200px) and up, where table-layout switches
+// to fixed (see the Table's sx below) -- see design-notes.md for how each
+// percentage was estimated. Sums to 99%, intentionally under 100%.
+const COLUMN_WIDTH_LG = {
+  name: '12%',
+  email: '19%',
+  jobTitle: '17%',
+  department: '10%',
+  country: '12%',
+  salary: '10%',
+  salaryUsd: '10%',
+  hireDate: '9%',
+}
+
+// Below lg, table-layout is auto and the table scrolls horizontally inside
+// its card (unchanged from before this round): these columns keep a fixed
+// pixel minimum/maximum so that still reads well. At lg+, table-layout is
+// fixed, so the percentage width is what actually constrains the column,
+// and overflowing text truncates (ellipsisSx) instead of forcing the
+// column wider -- which is what caused the horizontal scrollbar this round
+// fixes.
+const nameCellWidthSx = { width: { lg: COLUMN_WIDTH_LG.name } }
+const emailCellSx = {
+  ...ellipsisSx,
+  maxWidth: { xs: 220, lg: 'none' },
+  width: { lg: COLUMN_WIDTH_LG.email },
+}
+const jobTitleCellSx = {
+  ...ellipsisSx,
+  minWidth: { xs: 220, lg: 0 },
+  width: { lg: COLUMN_WIDTH_LG.jobTitle },
+}
+const departmentCellSx = { width: { lg: COLUMN_WIDTH_LG.department } }
+const countryCellSx = { width: { lg: COLUMN_WIDTH_LG.country } }
+const hireDateCellSx = {
+  ...nowrapSx,
+  minWidth: { xs: 130, lg: 0 },
+  width: { lg: COLUMN_WIDTH_LG.hireDate },
+}
+const salaryColumnSx = { ...nowrapSx, width: { lg: COLUMN_WIDTH_LG.salary } }
+const salaryUsdColumnSx = { ...nowrapSx, width: { lg: COLUMN_WIDTH_LG.salaryUsd } }
+// Round 3 used a fixed 120px inline-block so every figure's last digit
+// lines up on the same right edge; now that the column itself is
+// width-constrained at lg+, a smaller, font-relative size keeps that same
+// alignment without needing as much space.
+const SALARY_FIGURE_MIN_WIDTH = '7.5em'
 const salaryFigureSx = {
   display: 'inline-block' as const,
-  width: SALARY_FIGURE_WIDTH,
+  minWidth: SALARY_FIGURE_MIN_WIDTH,
   textAlign: 'right' as const,
   ...numericCellSx,
 }
@@ -265,11 +309,22 @@ export function EmployeeTable() {
       )}
 
       <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-        <TableContainer sx={{ maxHeight: TABLE_MAX_HEIGHT, overflow: 'auto' }}>
-          <Table stickyHeader>
+        <TableContainer
+          sx={{
+            // At lg+, size to the viewport (estimated overhead: AppBar
+            // 64px + Container's py 64px + filters card ~88px + table
+            // card border/pagination ~58px -- see design-notes.md) so the
+            // page itself doesn't scroll, only this area does, with the
+            // pagination footer always in view. Below lg, kept at the
+            // original fixed height.
+            maxHeight: { xs: TABLE_MAX_HEIGHT, lg: 'calc(100vh - 320px)' },
+            overflow: 'auto',
+          }}
+        >
+          <Table stickyHeader sx={{ tableLayout: { xs: 'auto', lg: 'fixed' } }}>
             <TableHead>
               <TableRow>
-                <TableCell align="center" sx={stickyHeaderCellSx}>
+                <TableCell align="center" sx={{ ...stickyHeaderCellSx, ...nameCellWidthSx }}>
                   <TableSortLabel
                     active={sortField === 'full_name'}
                     direction={sortField === 'full_name' ? sortOrder : 'asc'}
@@ -279,20 +334,26 @@ export function EmployeeTable() {
                     Name
                   </TableSortLabel>
                 </TableCell>
-                <TableCell align="center">Email</TableCell>
+                <TableCell align="center" sx={{ width: { lg: COLUMN_WIDTH_LG.email } }}>
+                  Email
+                </TableCell>
                 <TableCell align="center" sx={jobTitleCellSx}>
                   Job title
                 </TableCell>
-                <TableCell align="center">Department</TableCell>
-                <TableCell align="center">Country</TableCell>
+                <TableCell align="center" sx={departmentCellSx}>
+                  Department
+                </TableCell>
+                <TableCell align="center" sx={countryCellSx}>
+                  Country
+                </TableCell>
                 {/* Local-currency salary is never sortable: values are in
                     different currencies per employee, so they are not
                     comparable without converting first (that's what the
                     USD column is for). */}
-                <TableCell align="center" sx={nowrapSx}>
+                <TableCell align="center" sx={salaryColumnSx}>
                   Salary
                 </TableCell>
-                <TableCell align="center" sx={nowrapSx}>
+                <TableCell align="center" sx={salaryUsdColumnSx}>
                   <TableSortLabel
                     active={sortField === 'salary'}
                     direction={sortField === 'salary' ? sortOrder : 'asc'}
@@ -336,25 +397,34 @@ export function EmployeeTable() {
 
               {employees.map((employee) => (
                 <TableRow hover key={employee.id}>
-                  <TableCell sx={stickyBodyCellSx}>{employee.full_name}</TableCell>
-                  <TableCell sx={emailCellSx}>{employee.email}</TableCell>
-                  <TableCell sx={jobTitleCellSx}>{employee.job_title}</TableCell>
-                  <TableCell align="center">
+                  <TableCell
+                    title={employee.full_name}
+                    sx={{ ...stickyBodyCellSx, ...ellipsisSx, ...nameCellWidthSx }}
+                  >
+                    {employee.full_name}
+                  </TableCell>
+                  <TableCell title={employee.email} sx={emailCellSx}>
+                    {employee.email}
+                  </TableCell>
+                  <TableCell title={employee.job_title} sx={jobTitleCellSx}>
+                    {employee.job_title}
+                  </TableCell>
+                  <TableCell align="center" sx={departmentCellSx}>
                     <Chip label={employee.department} size="small" variant="outlined" />
                   </TableCell>
-                  <TableCell align="center">
+                  <TableCell align="center" sx={countryCellSx}>
                     <Chip
                       label={formatCountryName(employee.country)}
                       size="small"
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell align="center" sx={nowrapSx}>
+                  <TableCell align="center" sx={salaryColumnSx}>
                     <Box component="span" sx={salaryFigureSx}>
                       {formatMoney(employee.annual_gross_salary, employee.currency)}
                     </Box>
                   </TableCell>
-                  <TableCell align="center" sx={nowrapSx}>
+                  <TableCell align="center" sx={salaryUsdColumnSx}>
                     <Box component="span" sx={salaryFigureSx}>
                       {formatMoney(employee.annual_gross_salary_usd, 'USD')}
                     </Box>

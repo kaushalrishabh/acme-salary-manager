@@ -32,8 +32,12 @@ function App() {
           </Toolbar>
         </AppBar>
         {/* Future slices (forms, insights) render as further sections or
-            routes inside this container. */}
-        <Container component="main" sx={{ py: 4 }}>
+            routes inside this container. maxWidth={false} + sx.maxWidth
+            (not maxWidth="xl", which caps at 1536px): the table's content
+            needs ~1680px to lay out without a horizontal scrollbar at
+            1920px, and Container's own responsive gutters still apply
+            regardless of maxWidth. */}
+        <Container component="main" maxWidth={false} sx={{ maxWidth: 1680, py: 4 }}>
           <EmployeeTable />
         </Container>
       </QueryClientProvider>
