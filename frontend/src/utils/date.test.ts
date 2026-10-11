@@ -12,10 +12,14 @@ describe('formatDateOnly', () => {
     expect(result).toContain('2020')
   })
 
+  it('formats as "26 Jun 2017" (en-GB medium style)', () => {
+    expect(formatDateOnly('2017-06-26')).toBe('26 Jun 2017')
+  })
+
   it('formats a date in the middle of the month correctly', () => {
     const result = formatDateOnly('2023-06-15')
 
-    expect(result).toContain('2023')
+    expect(result).toBe('15 Jun 2023')
   })
 })
 
