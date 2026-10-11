@@ -348,11 +348,10 @@ so far:
   with the same salary string → `annual_gross_salary: "6500000.00"`,
   `annual_gross_salary_usd: "6500000.00"` -- the same literal number now
   means a completely different real salary. DELETE → 204, then GET → 404.
-- **Writes are unprotected.** `Depends(require_auth)` does not exist yet
-  (Slice 4). `POST`/`PUT`/`DELETE` on `/employees` currently have no auth
-  check at all. **Do not deploy this slice's backend to Render before
-  Slice 4 ships** -- the live URL is public, and every write endpoint is
-  open to anyone until then.
+- **Writes were unprotected at the end of this slice.** Fixed in Slice 4,
+  which adds `Depends(require_auth)` to all three write routes -- see
+  below. (The deploy warning that was here is removed now that every write
+  route is protected and tested.)
 
 ### Slice 3: insights
 
@@ -415,6 +414,71 @@ so far:
   (5-run average each), comfortably under the 500ms success criterion.
 - **Public, no auth check.** Read-only aggregate data; consistent with
   `GET /employees` also being public.
+
+### Slice 4: auth + CORS
+
+- **One shared HR login, no roles, no refresh.** `HR_USERNAME`/
+  `HR_PASSWORD`/`AUTH_SECRET_KEY`/`CORS_ALLOWED_ORIGINS` are all read from
+  the environment with no hardcoded fallback. `.env.example` lists all four
+  with comments; no real secret is ever committed.
+- **`AUTH_SECRET_KEY` fails the app at startup, not at first login,** if
+  unset (`create_app` calls `get_auth_secret_key()` eagerly, before
+  building the `FastAPI` instance). `HR_USERNAME`/`HR_PASSWORD` are
+  different: unset makes every login attempt return 401, the app still
+  starts.
+- **The credential check never short-circuits.** Both
+  `hmac.compare_digest` calls run unconditionally, combined with `&`
+  (never `and`); both sides are encoded to UTF-8 bytes first, since
+  `compare_digest` raises `TypeError` on non-ASCII `str` but never on
+  bytes. Wrong username, wrong password, and both wrong all return the
+  same 401 body, so nothing reveals which field was wrong. Mutation-
+  checked: inlining the two calls with `and` (so the second one could
+  actually be skipped, not just swapping the final combinator on
+  already-computed values) made the spy test's call-count assertion fail
+  (1 call instead of 2).
+- **Tokens:** `itsdangerous.URLSafeTimedSerializer`, `max_age=3600`.
+  `BadSignature`/`SignatureExpired` both become a 401 with
+  `WWW-Authenticate: Bearer`. Mutation-checked: dropping the `max_age`
+  argument from `loads()` made the expired-token test fail (an "expired"
+  token was accepted). The expired-token test itself uses `max_age=-1`,
+  not `0` -- `itsdangerous`'s expiry check is `age > max_age`, and
+  sub-second timing means an elapsed age of exactly `0` would not exceed
+  `max_age=0`.
+- **A real test bug, found and fixed along the way:** the first version of
+  the tampered-token test flipped the token's *last* character, which
+  doesn't reliably invalidate it -- base64's final character can have
+  unused "slack" bits when the encoded byte count isn't a multiple of 3,
+  so more than one character value decodes to the same bytes there.
+  Flipping the *first* character instead always changes the decoded
+  payload.
+- **Writes are protected, reads are not.** `Depends(require_auth)` on
+  `POST`/`PUT`/`DELETE` for `/employees`; every `GET` (employees and
+  insights) stays public. Mutation-checked: removing the dependency from
+  `DELETE /employees/{id}` made its "without auth" test fail (204 instead
+  of 401), while the other two routes' equivalent tests were unaffected.
+- **CORS:** `CORSMiddleware`, origins from `CORS_ALLOWED_ORIGINS` split on
+  commas; unset or empty means the list is empty, not "allow everything".
+- **`app.main` has a module-level `app = create_app()`** (for
+  `uvicorn app.main:app`), which runs once at import time, before any
+  pytest fixture exists. Making `AUTH_SECRET_KEY` fail-fast exposed this:
+  the autouse env fixture alone was too late to prevent that import from
+  raising during test collection. `conftest.py` now sets
+  `AUTH_SECRET_KEY`/`HR_USERNAME`/`HR_PASSWORD` via
+  `os.environ.setdefault` *before* importing `app.main` at all.
+
+**Known limits, accepted for now:**
+- **No logout or revocation.** A token is valid until it expires, full
+  stop -- there is no server-side session store to invalidate one early.
+- **`AUTH_SECRET_KEY` rotation invalidates every outstanding token at
+  once.** Expected, not a bug; worth knowing before a redeploy that
+  changes the env var surprises anyone mid-session.
+- **No rate limiting or lockout on login.** A wrong-password attempt costs
+  nothing to retry. Acceptable for a single shared demo login behind a
+  free-tier deployment, not for a real multi-tenant system.
+- **CORS misconfiguration is a silent failure mode.** If
+  `CORS_ALLOWED_ORIGINS` is wrong or unset after this ships, the frontend
+  breaks with an opaque browser-console CORS error, not a clear API
+  error -- there is nothing server-side that would flag it.
 
 ## Open items
 
