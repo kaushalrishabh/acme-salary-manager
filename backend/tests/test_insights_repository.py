@@ -201,3 +201,44 @@ def test_aggregates_and_sorted_salaries_are_empty_on_an_empty_table(
     assert repo.country_sorted_salaries() == {}
     assert repo.department_aggregates() == []
     assert repo.job_title_aggregates() == []
+
+
+# --- deterministic group ordering ----------------------------------------------------
+
+
+def test_country_aggregates_are_returned_in_ascending_group_order(
+    session: Session, repo: InsightsRepository
+) -> None:
+    # Inserted in a scrambled, non-alphabetical order: GROUP BY alone gives
+    # no ordering guarantee, so this only passes reliably because of the
+    # repository's own explicit ORDER BY group_column.
+    for country in ["SG", "US", "AU", "IN", "CA"]:
+        make_employee(
+            session, country=country, salary_major="60000", email=f"{country}@example.com"
+        )
+
+    group_values = [a.group_value for a in repo.country_aggregates()]
+
+    assert group_values == sorted(group_values)
+
+
+def test_department_aggregates_are_returned_in_ascending_group_order(
+    session: Session, repo: InsightsRepository
+) -> None:
+    for i, department in enumerate(["Sales", "Engineering", "Finance", "People", "Marketing"]):
+        make_employee(session, department=department, email=f"d{i}@example.com")
+
+    group_values = [a.group_value for a in repo.department_aggregates()]
+
+    assert group_values == sorted(group_values)
+
+
+def test_job_title_aggregates_are_returned_in_ascending_group_order(
+    session: Session, repo: InsightsRepository
+) -> None:
+    for i, job_title in enumerate(["Sales Manager", "Engineer", "Finance Manager", "HR Associate"]):
+        make_employee(session, job_title=job_title, email=f"j{i}@example.com")
+
+    group_values = [a.group_value for a in repo.job_title_aggregates()]
+
+    assert group_values == sorted(group_values)

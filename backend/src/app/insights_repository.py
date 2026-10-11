@@ -58,13 +58,23 @@ class InsightsRepository:
         # a tuple method, and mypy's Row stub types .count as that method
         # regardless of any per-query label, which a label named "count"
         # would otherwise shadow confusingly.
-        stmt = select(
-            group_column.label("group_value"),
-            func.count().label("headcount"),
-            func.sum(salary_column).label("total"),
-            func.min(salary_column).label("minimum"),
-            func.max(salary_column).label("maximum"),
-        ).group_by(group_column)
+        # ORDER BY group_column: GROUP BY alone does not guarantee any
+        # particular row order. SQLite's current query planner happens to
+        # return groups sorted (it computes GROUP BY via a sorted temp
+        # B-tree), but that is an incidental implementation detail, not a
+        # guarantee -- Postgres, which this schema is kept compatible with,
+        # can use hash-based grouping that gives no such ordering at all.
+        stmt = (
+            select(
+                group_column.label("group_value"),
+                func.count().label("headcount"),
+                func.sum(salary_column).label("total"),
+                func.min(salary_column).label("minimum"),
+                func.max(salary_column).label("maximum"),
+            )
+            .group_by(group_column)
+            .order_by(group_column)
+        )
         rows = self.session.execute(stmt).all()
         return [
             DimensionAggregate(
