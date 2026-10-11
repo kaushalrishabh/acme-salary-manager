@@ -1,13 +1,14 @@
+import ClearIcon from '@mui/icons-material/Clear'
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
-  FormControl,
-  InputLabel,
-  MenuItem,
+  Chip,
+  Grid,
+  IconButton,
+  InputAdornment,
   Paper,
-  Select,
-  type SelectChangeEvent,
   Skeleton,
   Table,
   TableBody,
@@ -36,6 +37,16 @@ const DEFAULT_ORDER: SortOrder = 'asc'
 const ALL_VALUE = ''
 const SKELETON_ROW_COUNT = 5
 const COLUMN_COUNT = 8
+const TABLE_MAX_HEIGHT = 560
+
+// Sticky left column (the Name header/cells) so it stays visible while the
+// table scrolls horizontally on narrow screens.
+const stickyColumnSx = {
+  position: 'sticky' as const,
+  left: 0,
+  backgroundColor: 'background.paper',
+}
+const numericCellSx = { fontVariantNumeric: 'tabular-nums' as const }
 
 export function EmployeeTable() {
   const [searchInput, setSearchInput] = useState('')
@@ -98,10 +109,6 @@ export function EmployeeTable() {
     setSortOrder(DEFAULT_ORDER)
   }
 
-  function handleFilterChange(setter: (value: string) => void) {
-    return (event: SelectChangeEvent) => setter(event.target.value)
-  }
-
   function handlePageChange(_event: unknown, newMuiPage: number) {
     setMuiPage(newMuiPage)
   }
@@ -117,66 +124,71 @@ export function EmployeeTable() {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
-        <TextField
-          label="Search"
-          size="small"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          sx={{ minWidth: 220 }}
-        />
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel id="country-filter-label">Country</InputLabel>
-          <Select
-            labelId="country-filter-label"
-            label="Country"
-            value={country}
-            onChange={handleFilterChange(setCountry)}
-          >
-            <MenuItem value={ALL_VALUE}>All</MenuItem>
-            {options?.countries.map((value) => (
-              <MenuItem key={value} value={value}>
-                {value}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel id="department-filter-label">Department</InputLabel>
-          <Select
-            labelId="department-filter-label"
-            label="Department"
-            value={department}
-            onChange={handleFilterChange(setDepartment)}
-          >
-            <MenuItem value={ALL_VALUE}>All</MenuItem>
-            {options?.departments.map((value) => (
-              <MenuItem key={value} value={value}>
-                {value}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel id="job-title-filter-label">Job title</InputLabel>
-          <Select
-            labelId="job-title-filter-label"
-            label="Job title"
-            value={jobTitle}
-            onChange={handleFilterChange(setJobTitle)}
-          >
-            <MenuItem value={ALL_VALUE}>All</MenuItem>
-            {options?.job_titles.map((value) => (
-              <MenuItem key={value} value={value}>
-                {value}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 6, md: 3 }}>
+            <TextField
+              label="Search"
+              size="small"
+              fullWidth
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              slotProps={{
+                input: {
+                  endAdornment: searchInput ? (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="Clear search"
+                        size="small"
+                        onClick={() => setSearchInput('')}
+                        edge="end"
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ) : undefined,
+                },
+              }}
+            />
+          </Grid>
+          <Grid size={{ xs: 6, md: 3 }}>
+            <Autocomplete
+              size="small"
+              openOnFocus
+              options={options?.countries ?? []}
+              value={country || null}
+              onChange={(_, newValue) => setCountry(newValue ?? '')}
+              slotProps={{ clearIndicator: { 'aria-label': 'Clear country filter' } }}
+              renderInput={(params) => <TextField {...params} label="Country" />}
+            />
+          </Grid>
+          <Grid size={{ xs: 6, md: 3 }}>
+            <Autocomplete
+              size="small"
+              openOnFocus
+              options={options?.departments ?? []}
+              value={department || null}
+              onChange={(_, newValue) => setDepartment(newValue ?? '')}
+              slotProps={{ clearIndicator: { 'aria-label': 'Clear department filter' } }}
+              renderInput={(params) => <TextField {...params} label="Department" />}
+            />
+          </Grid>
+          <Grid size={{ xs: 6, md: 3 }}>
+            <Autocomplete
+              size="small"
+              openOnFocus
+              options={options?.job_titles ?? []}
+              value={jobTitle || null}
+              onChange={(_, newValue) => setJobTitle(newValue ?? '')}
+              slotProps={{ clearIndicator: { 'aria-label': 'Clear job title filter' } }}
+              renderInput={(params) => <TextField {...params} label="Job title" />}
+            />
+          </Grid>
+        </Grid>
+      </Paper>
 
       {employeesQuery.isSuccess && (
-        <Typography variant="body2" sx={{ mb: 1 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           {total.toLocaleString()} employees
         </Typography>
       )}
@@ -203,82 +215,92 @@ export function EmployeeTable() {
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>
-                <TableSortLabel
-                  active={sortField === 'full_name'}
-                  direction={sortField === 'full_name' ? sortOrder : 'asc'}
-                  onClick={() => handleSortClick('full_name')}
-                >
-                  Name
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Job title</TableCell>
-              <TableCell>Department</TableCell>
-              <TableCell>Country</TableCell>
-              <TableCell align="right">Salary</TableCell>
-              <TableCell align="right">
-                <TableSortLabel
-                  active={sortField === 'salary'}
-                  direction={sortField === 'salary' ? sortOrder : 'asc'}
-                  onClick={() => handleSortClick('salary')}
-                >
-                  Salary (USD)
-                </TableSortLabel>
-              </TableCell>
-              <TableCell>
-                <TableSortLabel
-                  active={sortField === 'hire_date'}
-                  direction={sortField === 'hire_date' ? sortOrder : 'asc'}
-                  onClick={() => handleSortClick('hire_date')}
-                >
-                  Hire date
-                </TableSortLabel>
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {employeesQuery.isPending &&
-              Array.from({ length: SKELETON_ROW_COUNT }).map((_, rowIndex) => (
-                <TableRow key={rowIndex}>
-                  {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
-                    <TableCell key={cellIndex}>
-                      <Skeleton />
-                    </TableCell>
-                  ))}
+      <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+        <TableContainer sx={{ maxHeight: TABLE_MAX_HEIGHT, overflow: 'auto' }}>
+          <Table stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ ...stickyColumnSx, zIndex: 3 }}>
+                  <TableSortLabel
+                    active={sortField === 'full_name'}
+                    direction={sortField === 'full_name' ? sortOrder : 'asc'}
+                    onClick={() => handleSortClick('full_name')}
+                  >
+                    Name
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>Email</TableCell>
+                <TableCell>Job title</TableCell>
+                <TableCell>Department</TableCell>
+                <TableCell>Country</TableCell>
+                {/* Local-currency salary is never sortable: values are in
+                    different currencies per employee, so they are not
+                    comparable without converting first (that's what the
+                    USD column is for). */}
+                <TableCell align="right">Salary</TableCell>
+                <TableCell align="right">
+                  <TableSortLabel
+                    active={sortField === 'salary'}
+                    direction={sortField === 'salary' ? sortOrder : 'asc'}
+                    onClick={() => handleSortClick('salary')}
+                  >
+                    Salary (USD)
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={sortField === 'hire_date'}
+                    direction={sortField === 'hire_date' ? sortOrder : 'asc'}
+                    onClick={() => handleSortClick('hire_date')}
+                  >
+                    Hire date
+                  </TableSortLabel>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {employeesQuery.isPending &&
+                Array.from({ length: SKELETON_ROW_COUNT }).map((_, rowIndex) => (
+                  <TableRow key={rowIndex}>
+                    {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                      <TableCell key={cellIndex}>
+                        <Skeleton />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+
+              {employeesQuery.isSuccess && employees.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={COLUMN_COUNT} align="center">
+                    No employees match
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {employees.map((employee) => (
+                <TableRow hover key={employee.id}>
+                  <TableCell sx={stickyColumnSx}>{employee.full_name}</TableCell>
+                  <TableCell>{employee.email}</TableCell>
+                  <TableCell>{employee.job_title}</TableCell>
+                  <TableCell>
+                    <Chip label={employee.department} size="small" variant="outlined" />
+                  </TableCell>
+                  <TableCell>
+                    <Chip label={employee.country} size="small" variant="outlined" />
+                  </TableCell>
+                  <TableCell align="right" sx={numericCellSx}>
+                    {formatMoney(employee.annual_gross_salary, employee.currency)}
+                  </TableCell>
+                  <TableCell align="right" sx={numericCellSx}>
+                    {formatMoney(employee.annual_gross_salary_usd, 'USD')}
+                  </TableCell>
+                  <TableCell>{formatDateOnly(employee.hire_date)}</TableCell>
                 </TableRow>
               ))}
-
-            {employeesQuery.isSuccess && employees.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={COLUMN_COUNT} align="center">
-                  No employees match
-                </TableCell>
-              </TableRow>
-            )}
-
-            {employees.map((employee) => (
-              <TableRow key={employee.id}>
-                <TableCell>{employee.full_name}</TableCell>
-                <TableCell>{employee.email}</TableCell>
-                <TableCell>{employee.job_title}</TableCell>
-                <TableCell>{employee.department}</TableCell>
-                <TableCell>{employee.country}</TableCell>
-                <TableCell align="right">
-                  {formatMoney(employee.annual_gross_salary, employee.currency)}
-                </TableCell>
-                <TableCell align="right">
-                  {formatMoney(employee.annual_gross_salary_usd, 'USD')}
-                </TableCell>
-                <TableCell>{formatDateOnly(employee.hire_date)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableBody>
+          </Table>
+        </TableContainer>
         <TablePagination
           component="div"
           count={total}
@@ -288,7 +310,7 @@ export function EmployeeTable() {
           onRowsPerPageChange={handlePageSizeChange}
           rowsPerPageOptions={[25, 50, 100]}
         />
-      </TableContainer>
+      </Paper>
     </Box>
   )
 }
