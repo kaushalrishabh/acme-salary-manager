@@ -807,6 +807,19 @@ estimate from component heights, not a measurement of the rendered
 page -- needs visual confirmation and likely tuning of the `320px`
 constant.
 
+## Frontend: S7 table alignment (pre-CRUD pass)
+
+Every body cell is now centred (`align="center"`), matching the already-
+centred headers and the Department/Country chips -- Name, Email, and Job
+title previously had no `align` prop (default left). The salary figures'
+round-3/4 fixed-width inline-block (added so every row's last digit lined
+up on the same right edge) was removed per this round's request: the
+figure is now plain centred text with `font-variant-numeric: tabular-nums`
+like the rest of the table, trading exact right-edge digit alignment for
+visual consistency with every other column. The pinned Name column
+(sticky positioning, opaque background on mobile) and the ellipsis +
+`title` attribute on Name/Email/Job title are unchanged.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
