@@ -77,3 +77,54 @@ def test_lifespan_logs_rows_seeded_and_elapsed_time(
 
     messages = [record.getMessage() for record in caplog.records]
     assert any(re.search(r"Seeded 20 employees in \d+\.\d+s", message) for message in messages)
+
+
+# --- AUTH_SECRET_KEY fail-fast -------------------------------------------------------
+
+
+def test_create_app_fails_fast_when_auth_secret_key_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AUTH_SECRET_KEY", raising=False)
+
+    with pytest.raises(RuntimeError):
+        create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+
+# --- CORS -----------------------------------------------------------------------------
+
+
+def test_cors_allows_an_origin_listed_in_cors_allowed_origins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://other.example")
+    app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+    with TestClient(app) as client:
+        response = client.get("/health", headers={"Origin": "https://example.com"})
+
+    assert response.headers.get("access-control-allow-origin") == "https://example.com"
+
+
+def test_cors_rejects_an_origin_not_in_the_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://example.com")
+    app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+    with TestClient(app) as client:
+        response = client.get("/health", headers={"Origin": "https://not-allowed.example"})
+
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_cors_allows_nothing_when_the_env_var_is_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
+    app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+    with TestClient(app) as client:
+        response = client.get("/health", headers={"Origin": "https://example.com"})
+
+    assert "access-control-allow-origin" not in response.headers
