@@ -128,3 +128,50 @@ def test_cors_allows_nothing_when_the_env_var_is_unset(
         response = client.get("/health", headers={"Origin": "https://example.com"})
 
     assert "access-control-allow-origin" not in response.headers
+
+
+# --- CORS: preflight (OPTIONS) for the write methods -----------------------------------
+
+
+@pytest.mark.parametrize("method", ["PUT", "POST", "DELETE"])
+def test_cors_preflight_allows_the_write_method_and_auth_header_from_an_allowed_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://example.com")
+    app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/employees/1",
+            headers={
+                "Origin": "https://example.com",
+                "Access-Control-Request-Method": method,
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "https://example.com"
+    allowed_methods = response.headers.get("access-control-allow-methods", "")
+    assert method in allowed_methods
+    allowed_headers = response.headers.get("access-control-allow-headers", "").lower()
+    assert "authorization" in allowed_headers
+
+
+def test_cors_preflight_rejects_a_disallowed_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://example.com")
+    app = create_app(database_url=f"sqlite:///{tmp_path / 'test.db'}")
+
+    with TestClient(app) as client:
+        response = client.options(
+            "/employees/1",
+            headers={
+                "Origin": "https://not-allowed.example",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+
+    assert "access-control-allow-origin" not in response.headers
