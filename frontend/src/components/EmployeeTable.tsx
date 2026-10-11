@@ -19,7 +19,6 @@ import {
   TableRow,
   TableSortLabel,
   TextField,
-  Typography,
 } from '@mui/material'
 import type { ChangeEvent } from 'react'
 import { useState } from 'react'
@@ -28,6 +27,7 @@ import { useEmployeeOptions, useEmployees } from '../api/employees'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useSlowRequest } from '../hooks/useSlowRequest'
 import type { EmployeeSortField, SortOrder } from '../types/employee'
+import { formatCountryName } from '../utils/country'
 import { formatDateOnly } from '../utils/date'
 import { formatMoney } from '../utils/money'
 import { muiPageToApiPage } from '../utils/pagination'
@@ -40,13 +40,19 @@ const COLUMN_COUNT = 8
 const TABLE_MAX_HEIGHT = 560
 
 // Sticky left column (the Name header/cells) so it stays visible while the
-// table scrolls horizontally on narrow screens.
-const stickyColumnSx = {
+// table scrolls horizontally on narrow screens. The header cell deliberately
+// has no explicit background here: it inherits MUI's own stickyHeader
+// default (theme.palette.background.default), the same token every other
+// header cell gets -- the body cells below need their own explicit opaque
+// background instead, so scrolled-under content doesn't show through them.
+const stickyColumnPositionSx = {
   position: 'sticky' as const,
   left: 0,
-  backgroundColor: 'background.paper',
 }
+const stickyBodyCellSx = { ...stickyColumnPositionSx, backgroundColor: 'background.paper' }
 const numericCellSx = { fontVariantNumeric: 'tabular-nums' as const }
+const nowrapSx = { whiteSpace: 'nowrap' as const }
+const hireDateCellSx = { whiteSpace: 'nowrap' as const, minWidth: 130 }
 
 export function EmployeeTable() {
   const [searchInput, setSearchInput] = useState('')
@@ -122,6 +128,23 @@ export function EmployeeTable() {
   const total = employeesQuery.data?.total ?? 0
   const options = optionsQuery.data
 
+  // Sorted by display name (what the user sees), not by code.
+  const countryOptions = [...(options?.countries ?? [])].sort((a, b) =>
+    formatCountryName(a).localeCompare(formatCountryName(b)),
+  )
+
+  // Matches on the code or the display name, case-insensitively, so typing
+  // either "IN" or "ind" finds India -- MUI's default filtering only checks
+  // getOptionLabel's string, which here is the name, not the code.
+  function filterCountryOptions(optionCodes: string[], state: { inputValue: string }) {
+    const input = state.inputValue.trim().toLowerCase()
+    if (!input) return optionCodes
+    return optionCodes.filter(
+      (code) =>
+        code.toLowerCase().includes(input) || formatCountryName(code).toLowerCase().includes(input),
+    )
+  }
+
   return (
     <Box>
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -155,7 +178,9 @@ export function EmployeeTable() {
             <Autocomplete
               size="small"
               openOnFocus
-              options={options?.countries ?? []}
+              options={countryOptions}
+              getOptionLabel={formatCountryName}
+              filterOptions={filterCountryOptions}
               value={country || null}
               onChange={(_, newValue) => setCountry(newValue ?? '')}
               slotProps={{ clearIndicator: { 'aria-label': 'Clear country filter' } }}
@@ -187,12 +212,6 @@ export function EmployeeTable() {
         </Grid>
       </Paper>
 
-      {employeesQuery.isSuccess && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          {total.toLocaleString()} employees
-        </Typography>
-      )}
-
       {isSlow && (
         <Alert severity="info" sx={{ mb: 2 }}>
           Waking up the server, this can take up to a minute on first load.
@@ -220,7 +239,7 @@ export function EmployeeTable() {
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ ...stickyColumnSx, zIndex: 3 }}>
+                <TableCell align="center" sx={{ ...stickyColumnPositionSx, zIndex: 3 }}>
                   <TableSortLabel
                     active={sortField === 'full_name'}
                     direction={sortField === 'full_name' ? sortOrder : 'asc'}
@@ -229,16 +248,18 @@ export function EmployeeTable() {
                     Name
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>Email</TableCell>
-                <TableCell>Job title</TableCell>
-                <TableCell>Department</TableCell>
-                <TableCell>Country</TableCell>
+                <TableCell align="center">Email</TableCell>
+                <TableCell align="center">Job title</TableCell>
+                <TableCell align="center">Department</TableCell>
+                <TableCell align="center">Country</TableCell>
                 {/* Local-currency salary is never sortable: values are in
                     different currencies per employee, so they are not
                     comparable without converting first (that's what the
                     USD column is for). */}
-                <TableCell align="right">Salary</TableCell>
-                <TableCell align="right">
+                <TableCell align="center" sx={nowrapSx}>
+                  Salary
+                </TableCell>
+                <TableCell align="center" sx={nowrapSx}>
                   <TableSortLabel
                     active={sortField === 'salary'}
                     direction={sortField === 'salary' ? sortOrder : 'asc'}
@@ -247,7 +268,7 @@ export function EmployeeTable() {
                     Salary (USD)
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>
+                <TableCell align="center" sx={hireDateCellSx}>
                   <TableSortLabel
                     active={sortField === 'hire_date'}
                     direction={sortField === 'hire_date' ? sortOrder : 'asc'}
@@ -280,22 +301,26 @@ export function EmployeeTable() {
 
               {employees.map((employee) => (
                 <TableRow hover key={employee.id}>
-                  <TableCell sx={stickyColumnSx}>{employee.full_name}</TableCell>
+                  <TableCell sx={stickyBodyCellSx}>{employee.full_name}</TableCell>
                   <TableCell>{employee.email}</TableCell>
                   <TableCell>{employee.job_title}</TableCell>
                   <TableCell>
                     <Chip label={employee.department} size="small" variant="outlined" />
                   </TableCell>
                   <TableCell>
-                    <Chip label={employee.country} size="small" variant="outlined" />
+                    <Chip
+                      label={formatCountryName(employee.country)}
+                      size="small"
+                      variant="outlined"
+                    />
                   </TableCell>
-                  <TableCell align="right" sx={numericCellSx}>
+                  <TableCell align="right" sx={{ ...numericCellSx, ...nowrapSx }}>
                     {formatMoney(employee.annual_gross_salary, employee.currency)}
                   </TableCell>
-                  <TableCell align="right" sx={numericCellSx}>
+                  <TableCell align="right" sx={{ ...numericCellSx, ...nowrapSx }}>
                     {formatMoney(employee.annual_gross_salary_usd, 'USD')}
                   </TableCell>
-                  <TableCell>{formatDateOnly(employee.hire_date)}</TableCell>
+                  <TableCell sx={hireDateCellSx}>{formatDateOnly(employee.hire_date)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
