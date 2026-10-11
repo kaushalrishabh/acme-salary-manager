@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api import auth as auth_api
-from app.api import employees, health, insights
+from app.api import employees, health, insights, meta
 from app.auth import get_auth_secret_key
 from app.database import create_app_engine
 from app.env import get_env
@@ -75,6 +75,7 @@ def create_app(
     app.include_router(employees.router)
     app.include_router(insights.router)
     app.include_router(auth_api.router)
+    app.include_router(meta.router)
     app.add_exception_handler(NotFoundError, _not_found_handler)
     app.add_exception_handler(DuplicateEmailError, _duplicate_email_handler)
     app.add_exception_handler(FieldValidationError, _field_validation_handler)

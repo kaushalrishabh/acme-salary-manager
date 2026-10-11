@@ -121,3 +121,9 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     expires_in: int
+
+
+class CountryMeta(BaseModel):
+    code: str
+    currency: str
+    minor_unit: int
