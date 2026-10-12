@@ -953,6 +953,65 @@ leaving an unused sliver of width at the table's right edge -- accepted
 as a harmless cosmetic difference rather than maintaining two separate
 width budgets for the two login states.
 
+## S7: insights dashboard
+
+**Chart library choice:** `@mui/x-charts`'s `BarChart` -- already in the
+MUI family the rest of the app uses, so no second component library's
+theming/accessibility conventions to reconcile. Lazy-loaded with the
+`/insights` route (set up in the routing commit, before this dashboard
+existed): confirmed via the build output that the heavy part is fully
+isolated to that one chunk, not paid for on first load of the employee
+table --
+
+| | Before (placeholder) | After (real dashboard) |
+|---|---|---|
+| `InsightsPage` chunk | 0.16kB | 317.74kB (gzip 99.23kB) |
+| Main bundle | ~667kB | ~692kB (gzip 216.83kB) |
+
+The main bundle barely moved (new page/component source, not the chart
+library); essentially all of the new weight is in the chunk that only
+downloads when someone actually opens the dashboard.
+
+**One shared summary-table/chart pair, three dimensions.** Country,
+Department, and Job title each have their own backend response shape
+(`CountryInsight` has a `currency` field per group; `DepartmentInsight`/
+`JobTitleInsight` don't, since neither dimension has one local currency
+to report in -- deliberately absent, not null). Each is normalized to
+one shared `SummaryGroup` shape before reaching `InsightsSummaryTable`/
+`InsightsDistributionChart`, so there's one table and one chart
+implementation, not three: Country's `currency` carries through as-is;
+Department/Job title are hardcoded to `'USD'` at the normalization step.
+Group labels: Country runs its key through `formatCountryName`; the
+other two use the raw value (a department or job title name needs no
+translation).
+
+**Group selection:** clicking a row in the summary table calls
+`onSelectGroup`, which drives which group's distribution the chart
+below shows; the default (before anything's been clicked) is whichever
+group has the highest headcount. Sorting the summary table is
+client-side, via `Number()` on the money-string fields for comparison
+only -- never stored or displayed as a number, so it isn't the kind of
+"arithmetic on money" this project otherwise avoids (which is about not
+computing a *new* money amount, not about ordering existing ones).
+
+**Chart accessibility:** the `BarChart` itself is wrapped in a
+`role="img"` container with an `aria-label` naming the group, since a
+static bar chart can't expose its own per-bar data to assistive tech any
+other way that's actually reliable across chart libraries. The real
+accessible content is a visually hidden `<table>` (the standard
+clip-based recipe -- still in the accessibility tree and announced by
+screen readers, unlike `display: none`) listing every bucket's range
+(formatted in the group's own currency) and count.
+
+**A real bug, caught by the slow-server test, not assumed fixed by
+analogy with `EmployeeTable`:** the first version of the loading logic
+checked `query.isPending` before checking `isSlow`, so a request that
+never resolves always rendered the loading skeleton and never reached
+the slow-server banner at all. Fixed by making the banner additive --
+shown alongside whatever else is rendering (skeleton, error, or data),
+the same structure `EmployeeTable` already uses, since a slow *refetch*
+(switching tabs, Retry) can hit this too, not just the first load.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
