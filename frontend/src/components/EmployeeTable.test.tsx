@@ -3,8 +3,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { setToken } from '../auth/authStore'
+import { GlobalSnackbar } from '../notifications/GlobalSnackbar'
 import { theme } from '../theme'
 import { API_BASE_URL, defaultEmployees, makeEmployee } from '../test/handlers'
 import { server } from '../test/server'
@@ -20,6 +22,7 @@ function renderTable() {
     <ThemeProvider theme={theme}>
       <QueryClientProvider client={queryClient}>
         <EmployeeTable />
+        <GlobalSnackbar />
       </QueryClientProvider>
     </ThemeProvider>,
   )
@@ -429,5 +432,68 @@ describe('EmployeeTable sample employee', () => {
     const employee = makeEmployee({ full_name: 'Someone Else' })
     expect(employee.full_name).toBe('Someone Else')
     expect(employee.currency).toBe('USD')
+  })
+})
+
+describe('EmployeeTable CRUD actions', () => {
+  afterEach(() => {
+    setToken(null)
+  })
+
+  it('does not show Add employee or an Actions column when logged out', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    expect(screen.queryByRole('button', { name: /add employee/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Actions for Ada Lovelace' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows Add employee and an Actions column when logged in', async () => {
+    setToken('tok123')
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    expect(screen.getByRole('button', { name: /add employee/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Actions for Ada Lovelace' })).toBeInTheDocument()
+  })
+
+  it('clicking Add employee opens the form dialog, empty', async () => {
+    setToken('tok123')
+    const user = userEvent.setup()
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    await user.click(screen.getByRole('button', { name: /add employee/i }))
+
+    expect(screen.getByRole('heading', { name: 'Add employee' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/full name/i)).toHaveValue('')
+  })
+
+  it('kebab menu -> Edit opens the form dialog prefilled with that row', async () => {
+    setToken('tok123')
+    const user = userEvent.setup()
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Ada Lovelace' }))
+    await user.click(await screen.findByRole('menuitem', { name: /edit/i }))
+
+    expect(screen.getByRole('heading', { name: 'Edit employee' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/full name/i)).toHaveValue('Ada Lovelace')
+  })
+
+  it('kebab menu -> Delete opens the confirmation dialog naming that employee', async () => {
+    setToken('tok123')
+    const user = userEvent.setup()
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Ada Lovelace' }))
+    await user.click(await screen.findByRole('menuitem', { name: /delete/i }))
+
+    expect(screen.getByRole('heading', { name: /delete employee/i })).toBeInTheDocument()
+    expect(screen.getAllByText(/ada lovelace/i).length).toBeGreaterThan(0)
   })
 })
