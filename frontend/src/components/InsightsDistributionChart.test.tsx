@@ -48,4 +48,12 @@ describe('InsightsDistributionChart', () => {
       ),
     ).toBeInTheDocument()
   })
+
+  it('does not render a legend (a single-series color key adds width/height but no information)', () => {
+    renderChart()
+
+    // "Headcount" still appears exactly once -- the hidden table's header --
+    // not a second time from a legend entry.
+    expect(screen.getAllByText('Headcount')).toHaveLength(1)
+  })
 })

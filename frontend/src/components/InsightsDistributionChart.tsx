@@ -36,10 +36,21 @@ export function InsightsDistributionChart({
   )
 
   return (
-    <Box>
-      <Box role="img" aria-label={`Salary distribution for ${groupLabel}`}>
+    <Box sx={{ minWidth: 0 }}>
+      {/* minWidth: 0 on both Boxes: the chart sizes its SVG to this
+          element's measured width (no width prop -- see the height prop's
+          own doc comment, "if not defined, it takes the [size] of the
+          parent"), and a flex/grid ancestor's default min-width:auto would
+          otherwise stop that measurement from ever going narrower than the
+          chart's unconstrained content size, forcing the page to scroll
+          horizontally instead of the chart shrinking to fit. hideLegend:
+          there's exactly one series: a color-keyed legend for "Headcount"
+          tells a reader nothing the accessible table/caption don't already
+          say, and removing it is one less thing claiming vertical space. */}
+      <Box role="img" aria-label={`Salary distribution for ${groupLabel}`} sx={{ minWidth: 0 }}>
         <BarChart
           height={300}
+          hideLegend
           xAxis={[{ scaleType: 'band', data: rangeLabels }]}
           series={[{ data: distribution.map((bucket) => bucket.count), label: 'Headcount' }]}
         />

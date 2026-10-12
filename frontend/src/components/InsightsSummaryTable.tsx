@@ -74,7 +74,12 @@ export function InsightsSummaryTable({
   })
 
   return (
-    <TableContainer component={Paper} variant="outlined">
+    // minWidth: 0 -- a direct child of InsightsTabContent's flex column --
+    // so this card shrinks to the page's width at narrow viewports instead
+    // of forcing the page itself to scroll horizontally; the table inside
+    // still overflows into its own scrollbar via TableContainer's built-in
+    // overflow-x: auto, which is the one allowed at 390px.
+    <TableContainer component={Paper} variant="outlined" sx={{ minWidth: 0 }}>
       <Table size="small">
         <TableHead>
           <TableRow>
