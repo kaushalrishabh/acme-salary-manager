@@ -138,7 +138,11 @@ function InsightsTabContent({ query, groups, groupColumnLabel }: InsightsTabCont
             <InsightsDistributionChart
               groupLabel={selected.label}
               currency={selected.currency}
+              headcount={selected.headcount}
               distribution={selected.distribution}
+              groups={groups}
+              selectedKey={effectiveSelectedKey ?? ''}
+              onSelectGroup={setSelectedKey}
             />
           )}
         </Box>
@@ -156,6 +160,12 @@ export function InsightsPage() {
 
   return (
     <Box>
+      <Typography variant="h4" component="h2" sx={{ fontWeight: 600 }}>
+        Salary insights
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        Country figures are in local currency; department and job title figures are in USD.
+      </Typography>
       <Tabs value={tab} onChange={(_, value: TabKey) => setTab(value)}>
         {TABS.map(({ key, label }) => (
           <Tab key={key} value={key} label={label} />

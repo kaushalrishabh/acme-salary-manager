@@ -1,3 +1,6 @@
+import Card from '@mui/material/Card'
+import CardContent from '@mui/material/CardContent'
+import CardHeader from '@mui/material/CardHeader'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -5,8 +8,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import Paper from '@mui/material/Paper'
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 
 import type { DistributionBucket } from '../types/insights'
 import { formatMoney } from '../utils/money'
@@ -32,6 +34,8 @@ const SORT_COLUMNS: { field: SortField; label: string }[] = [
   { field: 'average', label: 'Average' },
   { field: 'median', label: 'Median' },
 ]
+
+const headcountFormat = new Intl.NumberFormat('en-US')
 
 // Money fields are strings, never used in arithmetic for display -- this
 // Number() conversion is sort-order comparison only, not a stored or
@@ -68,62 +72,96 @@ export function InsightsSummaryTable({
     setSortOrder((previous) => (previous === 'desc' ? 'asc' : 'desc'))
   }
 
+  function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, key: string) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onSelectGroup(key)
+    }
+  }
+
   const sortedGroups = [...groups].sort((a, b) => {
     const comparison = compareValues(a, b, sortField)
     return sortOrder === 'asc' ? comparison : -comparison
   })
 
   return (
-    // minWidth: 0 -- a direct child of InsightsTabContent's flex column --
-    // so this card shrinks to the page's width at narrow viewports instead
-    // of forcing the page itself to scroll horizontally; the table inside
-    // still overflows into its own scrollbar via TableContainer's built-in
-    // overflow-x: auto, which is the one allowed at 390px.
-    <TableContainer component={Paper} variant="outlined" sx={{ minWidth: 0 }}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell align="center">
-              <TableSortLabel
-                active={sortField === 'label'}
-                direction={sortField === 'label' ? sortOrder : 'asc'}
-                onClick={() => handleSortClick('label')}
-              >
-                {groupColumnLabel}
-              </TableSortLabel>
-            </TableCell>
-            {SORT_COLUMNS.map(({ field, label }) => (
-              <TableCell key={field} align="center">
-                <TableSortLabel
-                  active={sortField === field}
-                  direction={sortField === field ? sortOrder : 'asc'}
-                  onClick={() => handleSortClick(field)}
-                >
-                  {label}
-                </TableSortLabel>
-              </TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {sortedGroups.map((group) => (
-            <TableRow
-              hover
-              key={group.key}
-              selected={group.key === selectedKey}
-              onClick={() => onSelectGroup(group.key)}
-              sx={{ cursor: 'pointer' }}
-            >
-              <TableCell align="center">{group.label}</TableCell>
-              <TableCell align="center">{group.headcount}</TableCell>
-              <TableCell align="center">{formatMoney(group.min, group.currency)}</TableCell>
-              <TableCell align="center">{formatMoney(group.max, group.currency)}</TableCell>
-              <TableCell align="center">{formatMoney(group.average, group.currency)}</TableCell>
-              <TableCell align="center">{formatMoney(group.median, group.currency)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <Card variant="outlined" sx={{ minWidth: 0 }}>
+      <CardHeader
+        title={`Summary by ${groupColumnLabel.toLowerCase()}`}
+        slotProps={{ title: { component: 'h3', variant: 'subtitle1' } }}
+      />
+      {/* minWidth: 0 -- a direct child of InsightsTabContent's flex column --
+          so this card shrinks to the page's width at narrow viewports instead
+          of forcing the page itself to scroll horizontally; the table inside
+          still overflows into its own scrollbar via TableContainer's built-in
+          overflow-x: auto, which is the one allowed at 390px. */}
+      <CardContent sx={{ pt: 0 }}>
+        <TableContainer sx={{ minWidth: 0 }}>
+          <Table size="small" aria-label={`Summary by ${groupColumnLabel.toLowerCase()}`}>
+            <TableHead>
+              <TableRow>
+                <TableCell align="center">
+                  <TableSortLabel
+                    active={sortField === 'label'}
+                    direction={sortField === 'label' ? sortOrder : 'asc'}
+                    onClick={() => handleSortClick('label')}
+                  >
+                    {groupColumnLabel}
+                  </TableSortLabel>
+                </TableCell>
+                {SORT_COLUMNS.map(({ field, label }) => (
+                  <TableCell key={field} align="center">
+                    <TableSortLabel
+                      active={sortField === field}
+                      direction={sortField === field ? sortOrder : 'asc'}
+                      onClick={() => handleSortClick(field)}
+                    >
+                      {label}
+                    </TableSortLabel>
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedGroups.map((group) => {
+                const isSelected = group.key === selectedKey
+                return (
+                  <TableRow
+                    hover
+                    key={group.key}
+                    selected={isSelected}
+                    aria-selected={isSelected}
+                    tabIndex={0}
+                    onClick={() => onSelectGroup(group.key)}
+                    onKeyDown={(event) => handleRowKeyDown(event, group.key)}
+                    sx={(theme) => ({
+                      cursor: 'pointer',
+                      // box-shadow, not border-left: a border applied
+                      // directly to a <tr> is not reliably rendered across
+                      // browsers under table layout rules, but an inset
+                      // box-shadow is.
+                      boxShadow: isSelected
+                        ? `inset 4px 0 0 0 ${theme.palette.primary.main}`
+                        : 'none',
+                    })}
+                  >
+                    <TableCell align="center">{group.label}</TableCell>
+                    <TableCell align="center">{headcountFormat.format(group.headcount)}</TableCell>
+                    <TableCell align="center">{formatMoney(group.min, group.currency)}</TableCell>
+                    <TableCell align="center">{formatMoney(group.max, group.currency)}</TableCell>
+                    <TableCell align="center">
+                      {formatMoney(group.average, group.currency)}
+                    </TableCell>
+                    <TableCell align="center">
+                      {formatMoney(group.median, group.currency)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </CardContent>
+    </Card>
   )
 }

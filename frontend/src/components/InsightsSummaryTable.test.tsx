@@ -88,4 +88,45 @@ describe('InsightsSummaryTable', () => {
 
     expect(onSelectGroup).toHaveBeenCalledWith('IN')
   })
+
+  it('is in a card with a "Summary by <group>" heading', () => {
+    renderTable({ groupColumnLabel: 'Job title' })
+
+    expect(screen.getByRole('heading', { name: 'Summary by job title' })).toBeInTheDocument()
+  })
+
+  it('formats headcount with a thousands separator', () => {
+    renderTable({
+      groups: [{ ...groups[0], headcount: 12345 }],
+    })
+
+    expect(screen.getByText('12,345')).toBeInTheDocument()
+  })
+
+  it('marks the selected row with aria-selected, and no other row', () => {
+    renderTable({ selectedKey: 'IN' })
+
+    const indiaRow = screen.getByText('India').closest('tr') as HTMLElement
+    const usRow = screen.getByText('United States').closest('tr') as HTMLElement
+    expect(indiaRow).toHaveAttribute('aria-selected', 'true')
+    expect(usRow).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('rows are keyboard operable: tabIndex 0, Enter and Space both select', async () => {
+    const user = userEvent.setup()
+    const onSelectGroup = vi.fn()
+    renderTable({ onSelectGroup })
+
+    const indiaRow = screen.getByText('India').closest('tr') as HTMLElement
+    expect(indiaRow).toHaveAttribute('tabindex', '0')
+
+    indiaRow.focus()
+    await user.keyboard('{Enter}')
+    expect(onSelectGroup).toHaveBeenCalledWith('IN')
+
+    onSelectGroup.mockClear()
+    indiaRow.focus()
+    await user.keyboard(' ')
+    expect(onSelectGroup).toHaveBeenCalledWith('IN')
+  })
 })

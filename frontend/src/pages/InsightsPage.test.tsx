@@ -1,6 +1,6 @@
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { describe, expect, it } from 'vitest'
@@ -33,14 +33,16 @@ describe('InsightsPage', () => {
   it('Country tab: labels groups with their full country name and shows local-currency figures', async () => {
     renderPage()
 
-    expect(await screen.findByText('United States')).toBeInTheDocument()
-    expect(screen.getByText('India')).toBeInTheDocument()
-    expect(screen.getByText('₹500,000.00')).toBeInTheDocument()
+    await screen.findByRole('table', { name: 'Summary by country' })
+    const table = screen.getByRole('table', { name: 'Summary by country' })
+    expect(within(table).getByText('United States')).toBeInTheDocument()
+    expect(within(table).getByText('India')).toBeInTheDocument()
+    expect(within(table).getByText('₹500,000.00')).toBeInTheDocument()
   })
 
   it('Country tab: defaults the chart to the group with the highest headcount', async () => {
     renderPage()
-    await screen.findByText('India')
+    await screen.findByRole('table', { name: 'Summary by country' })
 
     // India has headcount 120, the highest in the fixture; US has 50.
     expect(await screen.findByRole('img', { name: /india/i })).toBeInTheDocument()
@@ -51,32 +53,53 @@ describe('InsightsPage', () => {
     renderPage()
     await screen.findByRole('img', { name: /india/i })
 
-    await user.click(screen.getByText('United States'))
+    await user.click(
+      within(screen.getByRole('table', { name: 'Summary by country' })).getByText('United States'),
+    )
 
     expect(await screen.findByRole('img', { name: /united states/i })).toBeInTheDocument()
+  })
+
+  it('changing the group selector updates the chart and highlights the matching row', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('img', { name: /india/i })
+
+    const select = screen.getByRole('combobox', { name: 'Select group for chart' })
+    await user.click(select)
+    await user.click(await screen.findByRole('option', { name: 'United States' }))
+
+    expect(await screen.findByRole('img', { name: /united states/i })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Summary by country' })
+    const usRow = within(table).getByText('United States').closest('tr') as HTMLElement
+    const inRow = within(table).getByText('India').closest('tr') as HTMLElement
+    expect(usRow).toHaveAttribute('aria-selected', 'true')
+    expect(inRow).toHaveAttribute('aria-selected', 'false')
   })
 
   it('Department tab: labels are plain department names, figures are USD', async () => {
     const user = userEvent.setup()
     renderPage()
-    await screen.findByText('India')
+    await screen.findByRole('table', { name: 'Summary by country' })
 
     await user.click(screen.getByRole('tab', { name: 'Department' }))
 
-    expect(await screen.findByText('Engineering')).toBeInTheDocument()
-    expect(screen.getByText('Sales')).toBeInTheDocument()
-    expect(screen.getByText('$60,000.00')).toBeInTheDocument()
+    const table = await screen.findByRole('table', { name: 'Summary by department' })
+    expect(within(table).getByText('Engineering')).toBeInTheDocument()
+    expect(within(table).getByText('Sales')).toBeInTheDocument()
+    expect(within(table).getByText('$60,000.00')).toBeInTheDocument()
   })
 
   it('Job title tab: labels are plain job titles, figures are USD', async () => {
     const user = userEvent.setup()
     renderPage()
-    await screen.findByText('India')
+    await screen.findByRole('table', { name: 'Summary by country' })
 
     await user.click(screen.getByRole('tab', { name: 'Job title' }))
 
-    expect(await screen.findByText('Engineer')).toBeInTheDocument()
-    expect(screen.getByText('Sales Manager')).toBeInTheDocument()
+    const table = await screen.findByRole('table', { name: 'Summary by job title' })
+    expect(within(table).getByText('Engineer')).toBeInTheDocument()
+    expect(within(table).getByText('Sales Manager')).toBeInTheDocument()
   })
 
   it('shows the range-bounds caption on the chart', async () => {

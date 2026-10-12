@@ -1163,6 +1163,86 @@ matching the new show/hide toggle too, since its `aria-label`
 ("Show password"/"Hide password") also contains "password" --
 switched every such query to the exact string `'Password'`.
 
+## S7 insights page redesign
+
+**Page header, cards, headcount formatting, keyboard rows.** "Salary
+insights" + the currency-rule sentence now sit above the tabs (not
+previously stated anywhere on the page itself). Both the summary table
+and the chart moved into their own `Card`s with an `h3` heading each
+("Summary by country" / "Salary distribution: United States"), so the
+page has one coherent heading hierarchy (`h1` app name -> `h2` "Salary
+insights" -> `h3` per card) instead of an unlabeled table and chart.
+Headcount is formatted with `Intl.NumberFormat('en-US')` (a plain
+integer count, not a money string, so there's no "never parseFloat"
+concern here the way there is for money). The selected row gets an
+inset `box-shadow` accent (not `border-left` -- a border applied
+directly to a `<tr>` is not reliably rendered under table layout rules
+in every browser, but an inset shadow is), plus `aria-selected` and
+`tabIndex={0}` with Enter/Space handling, alongside the existing click
+handler.
+
+**`Intl.NumberFormat#format` accepts a numeric string directly.**
+`formatCompactMoney` (new, in `utils/money.ts`) passes the money
+string straight to `.format()` rather than `Number()`-ing it first --
+per ECMA-402, `format` goes through `ToIntlMathematicalValue`, which
+explicitly supports a string input without an intermediate float, so
+this is a stricter reading of "never parseFloat or arithmetic" than
+the existing `formatMoney` (which does call `Number()`, and was left
+alone -- out of scope here, not a bug). TypeScript's own lib types
+only declare `format(value: number | bigint)`, lagging the spec, hence
+a cast. Locale is pinned to `'en-US'` specifically so JPY compacts to
+"¥6.7M" (Western M/K/B), not the locale-default Japanese 10,000s-based
+grouping ("670万") that `ja-JP` would produce for the same number --
+confirmed by testing both locales directly in Node before writing the
+implementation.
+
+**A real jsdom limitation, not a bug: chart tick labels can't be
+asserted on.** `@mui/x-charts` sizes the chart from its container's
+*measured* width (`ResizeObserver`, falling back to
+`getBoundingClientRect()` for the first paint) -- jsdom does neither;
+it has no real layout engine, so both report all-zero, and the chart
+renders at a tiny fallback size with zero visible x-axis tick labels,
+regardless of what the component's own code does. (Mocking
+`ResizeObserver` to report a believable size wasn't enough by itself;
+additionally overriding `Element.prototype.getBoundingClientRect`
+globally fixed the width but broke an *unrelated* measurement the
+library does for the y-axis's own tick text, blanking it -- both
+mocks were reverted rather than shipped half-working.) The fix:
+extracted the two label-building functions (`buildPreciseRangeLabels`,
+`buildCompactRangeLabels`) out to `utils/distributionLabels.ts` as
+plain, directly testable functions, and test *them* -- proving the
+compact-notation logic is correct -- rather than trying to assert on
+chart SVG text that this test environment cannot reliably produce.
+This also sidestepped a `react-refresh/only-export-components` error
+from exporting non-component functions out of a component file.
+
+**Tooltip.** `series[0].valueFormatter(value, {dataIndex})` builds one
+string -- precise range, count, and percentage of the group -- shown
+on the value line of the default tooltip; the axis header above it
+still shows the chart's own compact label. A fully custom tooltip
+layout (precise range as its own header line) would need importing
+`@mui/x-charts`' tooltip hooks directly, which felt like reaching
+further into non-essential internals than this requirement needed.
+
+**Group selector.** Lives in the chart's own `CardHeader` `action`
+slot (a plain `Select`, not `Autocomplete` -- a short, closed list of
+groups doesn't need free-text filtering) and drives the *same*
+`selectedKey`/`setSelectedKey` state the summary table's row clicks
+already used, in `InsightsTabContent` -- one shared piece of state,
+not two kept in sync by hand. Mutation-checked by making the select's
+`onChange` a no-op: the new "changing the selector updates the chart
+and highlights the row" integration test failed as expected.
+
+**Test query collisions, now that the selector shows the selected
+group's name too.** Several existing tests used a plain
+`getByText('India')`/`getByText('Engineering')` to find a row;
+once the chart's own closed-select display also shows the currently
+selected group's name (by design), those became ambiguous. Gave the
+visible summary table itself an `aria-label` ("Summary by country"
+etc., matching its own heading) so tests (and screen readers) can
+address it directly with `getByRole('table', { name: ... })` instead
+of disambiguating by hand each time.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
