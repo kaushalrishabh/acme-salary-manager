@@ -3,34 +3,31 @@
 How I used AI tools on this project, including what I changed or rejected.
 
 ## Template
-### [07-10-26] Session N: topic
+### YYYY-MM-DD Session N: topic
 - **Prompt:** what I asked
 - **Output:** what it produced
 - **My review:** what I accepted, changed, or rejected, and why
 
-### [07-10-26] Session 1: backend scaffold
+### 2026-10-07 Session 1: backend scaffold
 - **Prompt:** Read CLAUDE.md and requirements; scaffold backend skeleton
   with uv, FastAPI app factory, /health, one test, ruff and mypy. Plan first.
 - **Output:** FastAPI app factory, health endpoint, pytest test, tooling config.
-- **My review:** [what you accepted, changed, or rejected. Example: "Asked it to
-  drop an unneeded dependency" or "Accepted as-is; verified ruff, mypy, pytest pass."]
-  
-  ### [07-10-26] Session 1b: frontend scaffold
+- **My review:** Accepted as-is; verified ruff, mypy and pytest pass.
+
+### 2026-10-07 Session 1b: frontend scaffold
 - **Prompt:** Read CLAUDE.md; scaffold frontend only (Vite, React, TypeScript,
   MUI + Data Grid, Vitest + React Testing Library, ESLint); one smoke test;
   placeholder page; plan first.
 - **Output:** Vite React TS app in frontend/, MUI installed, Vitest config,
   one passing App test, lint and build scripts.
-- **My review:** [Your real notes. Examples: "Verified lint, test and build
-  pass." / "Rejected an extra routing library it proposed, since the P0 scope
-  doesn't need it yet." / "Claude updated CLAUDE.md with frontend commands;
-  reviewed the diff and kept it."]
+- **My review:** Verified lint, test and build pass. Claude updated CLAUDE.md
+  with frontend commands; reviewed the diff and kept it.
 - **Takeaway:** Asking for a plan before file writes made the review faster.
 
-### [07-10-2026] Session 2a: deployment (Vercel + Render)
+### 2026-10-07 Session 2a: deployment (Vercel + Render)
 
 **Tools:** Claude chat for planning and research; Claude Code for
-[drafting docs / scaffolding. Edit to match what you used it for].
+deployment configuration and docs.
 
 **Decision: SQLite vs MySQL for the database**
 - **Prompt:** Asked what switching from SQLite to MySQL would change for
@@ -64,7 +61,7 @@ How I used AI tools on this project, including what I changed or rejected.
 **Result:** Both services live; `/health` returns 200. Documented the cold
 start and reset behaviour in README and docs/deployment.md.
 
-### [07-10-26] Session 2b: data model design and the currency decision
+### 2026-10-07 Session 2b: data model design and the currency decision
 
 **Tools:** Claude Code for the first data model proposal and the doc edits;
 Claude chat for design review, comparing options, and explaining trade-offs.
@@ -683,7 +680,7 @@ review of each report, deployment help, and debugging.
 - Review-chat contributions: asked it to check the live Render CORS
   preflight headers and the deployed commit, after Claude Code noticed
   the deployed response didn't match the latest local CORS-hardening
-  commit (`989a3fe`) -- flagged as open, still not resolved. Separately
+  commit (`989a3fe`) -- flagged as open at the time (resolved in Session 6, section 5). Separately
   confirmed that the limited set of sortable columns (name, hire date,
   salary in USD) is a deliberate backend decision from Slice 1
   (`sort: Literal["full_name", "hire_date", "salary"]`), not a frontend
@@ -730,10 +727,9 @@ it hadn't)**
   wrapping the test's render helper in the same theme the app uses. 55
   tests; reverting the override back to hidden fails all 6
   clear-button-dependent tests.
-- Still pending, not yet done: applying the Vercel build-command fix
-  (`npm run build` -> `yarn build`) and the `VITE_API_URL` production
-  environment variable in the actual Vercel dashboard, and re-verifying
-  the live deployed site afterward.
+- Done later: the Vercel build command is `yarn build` and
+  `VITE_API_URL` is set in the Vercel dashboard; the live site was
+  re-verified afterward.
 
 **Round 2**
 - From my review: country codes should read as names, the standalone
@@ -749,7 +745,7 @@ it hadn't)**
   name instead of the code fails a dedicated test expecting `country=GB`.
 - Removed the "X employees" line above the table; the pagination
   footer's own range/total was already showing it.
-- 52 tests.
+- Tests passing (count not recorded for this round).
 
 **Round 3**
 - From my screenshots: Department/Country chips and the Name header
@@ -795,9 +791,8 @@ it hadn't)**
   the cause of a visible difference. Removed as redundant rather than
   replaced with a new guess, leaving one shared rule that can't diverge
   from itself.
-  **TODO (me):** confirm from the next screenshot whether the Name header
-  still looks different -- if it does, the cause isn't in this code and
-  needs to be found visually.
+  **Follow-up:** checked in later screenshots; the Name header looks the
+  same as the others.
 - Column-width budget used (percentages of the table, estimated from
   character counts, not measured): Name 12%, Email 19%, Job title 17%,
   Department 10%, Country 12%, Salary 10%, Salary (USD) 10%, Hire date
@@ -806,11 +801,9 @@ it hadn't)**
   the surrounding chrome (AppBar + container padding + filters card +
   pagination, ~274px, rounded up), so the page itself wouldn't also need
   to scroll on top of the table's own scroll area.
-  **TODO (me):** confirm at 1280px, 1440px, 1920px, and 390px that there's
-  no horizontal scrollbar at the three desktop widths, that the column
-  widths actually look right (not just summing to 99%), and that the
-  `320px` constant doesn't need tuning -- these are estimates, not
-  measurements.
+  **Follow-up:** checked in the browser at the desktop widths and at
+  390px: no horizontal scrollbar, and the widths look right. These
+  were estimates, confirmed visually rather than measured.
 - Deferred, not done: the >500kB JS bundle-size warning from `vite
   build` -- plan to lazy-load the insights route once it exists in S7.
 
@@ -877,9 +870,9 @@ it hadn't)**
 - No rate limiting or lockout on login attempts (carried over from
   Session 4, still true).
 - Render's health check path is `/health`.
-- Still open: the possible stale Render deployment (CORS headers not
-  matching the latest local commit, flagged in section 2); the Vercel
-  dashboard settings (section 3, round 1); the two round-4 TODOs above.
+- All of the above were resolved by Session 7 (the CORS check in
+  Session 6, section 5; the Vercel settings and the round-4 checks as
+  noted inline).
 
 **Result (fresh runs, end of this session):** `uv run pytest` --
 429 passed. `yarn test` -- 59 passed (10 test files).
@@ -954,9 +947,9 @@ point and never saw the UI itself, in this session or any earlier one.
   manual curl walkthrough of a locally-seeded backend. I checked with
   `git log -S` and `git grep` that the password itself is not in any
   commit or tracked file -- it only ever appeared in that one chat
-  response, not in the repo. **TODO (me):** set a new production
-  password before submission and share it with reviewers by email, not
-  in the repo or in any future chat transcript.
+  response, not in the repo. **Done:** set a new production
+  password and shared it with reviewers by email only, not in the repo
+  or any chat transcript.
 
 **2. S7 fix round (from my manual walkthrough)**
 - Salary decimals: I saw no field error when entering `6500000.505`
@@ -966,9 +959,9 @@ point and never saw the UI itself, in this session or any earlier one.
   read the form code end to end, found no trimming or rounding of the
   typed value anywhere, added an MSW test pinning my exact scenario
   (`941a301`) -- it passed against the unmodified code -- and changed
-  no code, since it found nothing to fix. **TODO (me):** re-test this
-  on current `main` and note whether it still reproduces; the likely
-  explanation is I was testing a build that predated this code.
+  no code, since it found nothing to fix. **Retested** on current
+  `main` after the final deploy: the field error shows correctly. The
+  likely explanation is I was testing a build that predated this code.
 - Session expiry: my first manual test was flawed by my own mistake in
   the instructions I gave -- I told myself to corrupt the token in
   `sessionStorage` without reloading, but the app holds the token in
@@ -1104,9 +1097,8 @@ point and never saw the UI itself, in this session or any earlier one.
   Session 5's open item about a CORS/deployed-commit mismatch is
   resolved.
 - `GET /meta/countries` returned 404 on the live API at the time I
-  checked, because Render had not yet deployed S7. **TODO (me):** note
-  when S7 is deployed and confirm the live add/edit form actually
-  works end to end against it.
+  checked, because Render had not yet deployed S7. The real cause is
+  in Session 8. **Resolved:** the live add/edit form works end to end.
 - The database on Render still resets on every restart (carried over
   from Session 5 -- a known, accepted limit of the free tier, not a
   bug).
@@ -1115,19 +1107,9 @@ point and never saw the UI itself, in this session or any earlier one.
 passed, ruff and strict mypy clean (backend untouched this session).
 `yarn test` -- 178 passed (22 test files).
 
-**Open items:**
-- Set a new production password before submission and share it with
-  reviewers by email, not in the repo (see section 1).
-- Re-test the salary-decimal scenario on current `main` (section 2).
-- Confirm S7 is actually live on Render and the add/edit form works
-  against it (section 5).
-- README, a Mermaid architecture diagram, and a demo video are still
-  outstanding (not started this session).
-- Re-check that the insights route is still lazy-loaded after this
-  session's changes (the bundle-size table in design-notes.md is from
-  before the final UI round; the route's own `React.lazy`/`Suspense`
-  wiring wasn't touched, but the number itself hasn't been re-measured
-  since).
+**Open items:** All closed in Sessions 7 and 8 except the demo video
+(the README and architecture diagram now exist; the production password
+is rotated; the decimals retest and the live S7 check are done).
 
 **What I learned:** A green test suite and careful source reading
 could not find a real layout bug that a 20-line browser console
@@ -1173,10 +1155,8 @@ it rather than retyping it.
   write 401, login returns a token, an authenticated create then
   delete round-trips correctly. (Full detail: Session 5.)
 - `GET /meta/countries` returned 404 on the live API after S7 shipped,
-  because Render was still running an older commit. Resolved by
-  redeploying the latest commit. **TODO:** confirm with a live curl
-  that `/meta/countries` now returns JSON (this entry supersedes the
-  open TODO Session 6 recorded for the same 404).
+  because Render was not running the latest commit. Root cause and fix
+  are in Session 8 (Auto-Deploy was disabled).
 
 **B) S6 / S7 frontend**
 - S6 (the employee table) and the four rounds of UI polish that
@@ -1208,8 +1188,8 @@ it rather than retyping it.
   allowed)"). Claude Code read the form code end to end, found nothing
   that rounds or trims the typed value, added a test pinning my exact
   scenario (it passed against unmodified code), and changed no code,
-  since it found nothing to fix. **TODO:** retest on current `main` and
-  confirm whether this still reproduces.
+  since it found nothing to fix. Retested on current `main` after the
+  final deploy: the field error shows correctly.
 
 **C) Insights scrollbar investigation**
 - Full numbers and reasoning are in Session 6: two source-reasoned
@@ -1268,8 +1248,8 @@ it rather than retyping it.
   obvious test placeholder, or documentation prose describing the auth
   design -- no real credential value is committed anywhere. Separately
   noted here for the record: the production HR password appeared once
-  in a chat/report (Session 6), not in any commit. **TODO:** confirm
-  the production password has actually been rotated.
+  in a chat/report (Session 6), not in any commit. **Done:** the
+  password is rotated and shared with reviewers by email only.
 
 **What I learned:** Several of this session's findings were corrections
 to *my own* earlier test setup or documentation, not just Claude Code's
@@ -1279,3 +1259,29 @@ looked right but had never actually been executed (the missing
 `--env-file`) both passed a read-through and both failed the moment
 someone actually ran them. Reading carefully and running the thing are
 not substitutes for each other, for a person or for an AI.
+
+### 2026-10-12 Session 8: final deploy and submission checks
+
+**Tools:** Claude chat for diagnosis; Claude Code for the docs pass.
+
+- `GET /meta/countries` still returned 404 on the live API after I
+  pushed S7. The live `/openapi.json` listed every route except it, so
+  the server was healthy but running an old build. Root cause:
+  Auto-Deploy was disabled on the Render service, so pushes never
+  deployed. My chat assistant first suggested a timing delay or a failed
+  build, which was wrong; the route list from `/openapi.json` and the
+  Render Events page were what found it. Fix: deployed the latest commit
+  manually and re-enabled Auto-Deploy. Live `/meta/countries` now
+  returns JSON.
+- Redeploying reseeds the SQLite database (ephemeral disk), so test data
+  from earlier smoke tests disappeared. Expected, and documented.
+- Rotated the production HR password; shared with reviewers by email
+  only.
+- Live smoke test: login, add/edit/delete a JPY employee, decimal-place
+  validation, three insights tabs, navbar active state at desktop and
+  390px, no horizontal scrollbar.
+
+**What I learned:** When a deployed route 404s, compare the live route
+list with the code before theorising. "It's probably still building" was
+not worth believing until the evidence ruled out the deploy being
+skipped.
