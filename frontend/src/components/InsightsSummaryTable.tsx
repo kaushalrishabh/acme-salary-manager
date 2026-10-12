@@ -8,6 +8,7 @@ import TableSortLabel from '@mui/material/TableSortLabel'
 import Paper from '@mui/material/Paper'
 import { useState } from 'react'
 
+import type { DistributionBucket } from '../types/insights'
 import { formatMoney } from '../utils/money'
 
 export interface SummaryGroup {
@@ -19,6 +20,7 @@ export interface SummaryGroup {
   max: string
   average: string
   median: string
+  distribution: DistributionBucket[]
 }
 
 type SortField = 'label' | 'headcount' | 'min' | 'max' | 'average' | 'median'
