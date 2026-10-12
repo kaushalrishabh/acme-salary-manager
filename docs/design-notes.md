@@ -1243,6 +1243,65 @@ etc., matching its own heading) so tests (and screen readers) can
 address it directly with `getByRole('table', { name: ... })` instead
 of disambiguating by hand each time.
 
+## Insights chart: the visually-hidden table was removed, not fixed again
+
+The "S7 final UI round" entry above (item 1) turned out to be an
+incomplete fix. A browser console diagnostic on `/insights` at 1440px,
+run against the live app (not jsdom), found the page still 41px wider
+than its own client width and about 550px taller than its real content:
+`document.documentElement.scrollWidth` 1344 vs `clientWidth` 1303;
+`scrollHeight` 2189 vs the table's own bottom edge at Y 1637. The one
+element past the right edge, and the lowest element on the page, was
+the same wrapper both times: the chart's visually-hidden table div.
+
+Moving the clipping styles from the `<table>` onto a wrapping `<div>`
+(the earlier fix) was based on a real mechanism -- `overflow` not
+reaching a table's `<caption>` -- but evidently isn't sufficient by
+itself in a real browser either; `clip: rect(...)` is a legacy,
+poorly-specified property, and a 1x1px absolutely-positioned box with
+`overflow: hidden` does not reliably contain a table in every browser
+regardless of which element the styles sit on. Rather than iterate on
+another variant of the same CSS trick, the hidden table was removed
+entirely.
+
+**Replacement: a visible, collapsed-by-default disclosure**, inside
+the chart's own card. A "Show data table" / "Hide data table" `Button`
+(`aria-expanded`, `aria-controls` pointing at the table's `id`) toggles
+a normal `Table` (caption, range, headcount, and -- new -- a
+percentage-of-group column) in and out of the tree via plain
+conditional rendering (`{showTable && <TableContainer>...}`), not a
+CSS visibility trick -- an unmounted element cannot leak into layout
+at all, clipped or not, which is a strictly stronger guarantee than
+anything clip-rect/position-absolute can offer. The chart's own
+`role="img"` `aria-label` now names the group *and* its total headcount
+(e.g. "Salary distribution for United States, 35 employees"), and gets
+`aria-describedby` pointing at the table's `id` only while it's
+expanded. The shared percentage calculation (bucket count / group
+headcount, rounded) moved to `computeBucketPercentage` in
+`utils/distributionLabels.ts`, reused by both the tooltip's value line
+and the new table's Percentage column.
+
+Searched the rest of the frontend for the same clip-rect/visually-
+hidden/position-absolute-hidden-content pattern: this was the only
+instance in the codebase (confirmed again after removal -- grepped for
+`clip:`, `visuallyHidden`, `sr-only`, and bare `position: 'absolute'`
+usages; the only other `position: 'absolute'` in the app is the navbar
+active-link underline bar, a visible decoration, not hidden content).
+
+Expected console-diagnostic numbers after this fix, for a re-check:
+
+| Page | scrollWidth vs clientWidth (1440px) | scrollHeight |
+|---|---|---|
+| `/insights` | equal (no horizontal overflow) | ~1640px (the table's real bottom edge), not 2189 |
+| `/` (employees) | equal | matches the table's own real content height |
+| `/login` | equal | matches the viewport height below the AppBar (centered form, no extra scroll) |
+
+No element on any of these three pages should report a right edge past
+`clientWidth`, and none should have `scrollHeight` meaningfully taller
+than what's visibly on the page (a user-caused scroll, like opening the
+data-table disclosure, legitimately adds height -- that's expected, not
+a bug).
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's

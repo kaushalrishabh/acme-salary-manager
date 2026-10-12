@@ -64,25 +64,69 @@ describe('InsightsDistributionChart', () => {
     expect(screen.getByRole('img', { name: /united states/i })).toBeInTheDocument()
   })
 
-  it('includes a visually hidden table with every bucket range and count, for screen readers', () => {
-    renderChart()
+  describe('data table disclosure (replaces the old visually-hidden table)', () => {
+    it('is collapsed by default: button aria-expanded="false", table not in the accessibility tree', () => {
+      renderChart()
 
-    const table = screen.getByRole('table', { hidden: true })
-    expect(within(table).getByText('25')).toBeInTheDocument()
-    expect(within(table).getByText('$50,000.00–$100,000.00')).toBeInTheDocument()
-  })
+      const button = screen.getByRole('button', { name: 'Show data table' })
+      expect(button).toHaveAttribute('aria-expanded', 'false')
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    })
 
-  it('puts the clipping styles on a wrapping div, not the table itself (tables do not shrink/clip the way divs do)', () => {
-    renderChart()
+    it('expands on click, showing the caption, every bucket range/count/percentage, and collapses again on a second click', async () => {
+      const user = userEvent.setup()
+      renderChart()
 
-    const table = screen.getByRole('table', { hidden: true })
-    const wrapper = table.parentElement as HTMLElement
+      await user.click(screen.getByRole('button', { name: 'Show data table' }))
 
-    expect(wrapper.tagName).toBe('DIV')
-    expect(getComputedStyle(wrapper).position).toBe('absolute')
-    expect(getComputedStyle(wrapper).overflow).toBe('hidden')
-    expect(getComputedStyle(table).position).not.toBe('absolute')
-    expect(getComputedStyle(table).overflow).not.toBe('hidden')
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('Salary distribution for United States')).toBeInTheDocument()
+      expect(within(table).getByText('$50,000.00–$100,000.00')).toBeInTheDocument()
+      expect(within(table).getByText('25')).toBeInTheDocument()
+      // 25 of 35 total -- see the `groups`/`headcount` fixture above.
+      expect(within(table).getByText('71%')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Hide data table' })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Hide data table' }))
+
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Show data table' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+    })
+
+    it('expands via keyboard Enter and Space, not just a click', async () => {
+      const user = userEvent.setup()
+      renderChart()
+
+      screen.getByRole('button', { name: 'Show data table' }).focus()
+      await user.keyboard('{Enter}')
+      expect(screen.getByRole('table')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Hide data table' }))
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+      screen.getByRole('button', { name: 'Show data table' }).focus()
+      await user.keyboard(' ')
+      expect(screen.getByRole('table')).toBeInTheDocument()
+    })
+
+    it("the chart's aria-describedby points at the table only while it's expanded", async () => {
+      const user = userEvent.setup()
+      renderChart()
+
+      const img = screen.getByRole('img', { name: /united states/i })
+      expect(img).not.toHaveAttribute('aria-describedby')
+
+      await user.click(screen.getByRole('button', { name: 'Show data table' }))
+
+      const table = screen.getByRole('table')
+      expect(img).toHaveAttribute('aria-describedby', table.id)
+    })
   })
 
   it('shows the range-bounds caption', () => {
@@ -95,11 +139,13 @@ describe('InsightsDistributionChart', () => {
     ).toBeInTheDocument()
   })
 
-  it('does not render a legend (a single-series color key adds width/height but no information)', () => {
+  it('does not render a legend (a single-series color key adds width/height but no information)', async () => {
+    const user = userEvent.setup()
     renderChart()
+    await user.click(screen.getByRole('button', { name: 'Show data table' }))
 
-    // "Headcount" still appears exactly once -- the hidden table's header --
-    // not a second time from a legend entry.
+    // "Headcount" still appears exactly once -- the expanded table's
+    // column header -- not a second time from a legend entry.
     expect(screen.getAllByText('Headcount')).toHaveLength(1)
   })
 

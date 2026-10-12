@@ -23,3 +23,11 @@ export function buildCompactRangeLabels(
       `${formatCompactMoney(bucket.range_min, currency)}–${formatCompactMoney(bucket.range_max, currency)}`,
   )
 }
+
+// Display-only, derived from integer counts (not money) -- rounds to the
+// nearest whole percent for the tooltip's value line and the visible
+// bucket table's "Percentage" column.
+export function computeBucketPercentage(count: number, headcount: number): number {
+  if (headcount <= 0) return 0
+  return Math.round((count / headcount) * 100)
+}
