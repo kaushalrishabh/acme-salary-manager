@@ -899,3 +899,243 @@ container in a way no test catches, a hover-only control isn't
 accessible on a touch device regardless of what the DOM says, and a
 sizing constant derived from arithmetic needs to be labelled an estimate
 until someone actually measures the rendered page.
+
+### 2026-10-12 Session 6: S7 (login, CRUD, insights dashboard), the fix round, the final UI round, and the insights scrollbar investigation
+
+**Tools:** Claude Code for implementation; a separate Claude chat for
+reviewing every report, diagnosing problems from my browser output and
+screenshots, and drafting prompts. Claude Code had no browser at any
+point and never saw the UI itself, in this session or any earlier one.
+
+**1. S7: login, employee add/edit/delete, insights dashboard**
+- Built test-first, one commit per red/green step, from `GET
+  /meta/countries` (`b6fac23`/`aa67fc9`) through the insights dashboard
+  (`91f33e1`/`96a377d`/`0105f27`): public `GET /meta/countries` (code,
+  currency, `minor_unit`); `react-router` with `/`, `/insights`,
+  `/login` and a `vercel.json` SPA rewrite; login with the token held
+  in memory plus `sessionStorage`, an `Authorization` header only on
+  writes, a 401 that clears the token and returns the user to the page
+  they were on after re-login; an add/edit dialog (country `Select`
+  with a currency-and-decimal hint, salary sent exactly as typed, a
+  422's field errors mapped per field, the 409 on email mapped to the
+  email field, a native date input); a kebab-menu Actions column
+  visible only when logged in; a delete-confirmation dialog; and an
+  insights dashboard with three tabs, a summary table, a 10-bucket
+  chart, and the range-bound caption.
+- Separately, every body cell in the employee table was centred
+  (`23b6f85`/`b595e0b`), replacing an earlier test that only checked
+  the chips were centred, and the column-width budget was re-tuned for
+  the new Actions column.
+- Tests: 144 frontend, 434 backend (backend wasn't touched this slice).
+  Four required mutation checks, each run and reverted: removing the
+  `Authorization` header from writes failed the header test; removing
+  the 401-handling block failed the session-expiry test; breaking the
+  422 field mapping (`loc[1]` to `loc[0]`) failed three tests across a
+  unit test and the form-dialog integration test; hiding the Actions
+  column's logged-out guard failed the "no Actions column when logged
+  out" test.
+- Two bugs caught mid-build, both while writing the tests meant to
+  cover something else: the edit dialog's prefill never actually ran
+  for a dialog that starts already open (only on a later open
+  *transition*, which every real caller skips), fixed with a lazy
+  `useState` initializer; and the insights page's loading-state checks
+  tested `isPending` before `isSlow`, so a request that never resolved
+  always showed the loading skeleton and the slow-server banner could
+  never show, fixed by making the banner additive.
+- Deviations from the brief's own part numbering: the auth token store
+  (`659613b`/`20d4260`) was built before the routing commit
+  (`b0625eb`/`5a93cb0`) finished, since the AppBar's Login/Logout
+  needed it; row-click selection was added to the insights summary
+  table beyond what was asked; all three insights endpoints are
+  fetched on mount rather than per-tab, since the payloads are small
+  and this keeps tab-switching instant.
+- **Claude Code printed the local HR password in its own report**
+  (the same value as the production password), while describing a
+  manual curl walkthrough of a locally-seeded backend. I checked with
+  `git log -S` and `git grep` that the password itself is not in any
+  commit or tracked file -- it only ever appeared in that one chat
+  response, not in the repo. **TODO (me):** set a new production
+  password before submission and share it with reviewers by email, not
+  in the repo or in any future chat transcript.
+
+**2. S7 fix round (from my manual walkthrough)**
+- Salary decimals: I saw no field error when entering `6500000.505`
+  for a JPY employee in the browser. I reproduced the backend side
+  with curl first: it correctly returns a 422, "too many decimal
+  places (at most 0 allowed)," on `annual_gross_salary`. Claude Code
+  read the form code end to end, found no trimming or rounding of the
+  typed value anywhere, added an MSW test pinning my exact scenario
+  (`941a301`) -- it passed against the unmodified code -- and changed
+  no code, since it found nothing to fix. **TODO (me):** re-test this
+  on current `main` and note whether it still reproduces; the likely
+  explanation is I was testing a build that predated this code.
+- Session expiry: my first manual test was flawed by my own mistake in
+  the instructions I gave -- I told myself to corrupt the token in
+  `sessionStorage` without reloading, but the app holds the token in
+  memory and only reads storage at load time, so that test proved
+  nothing. Claude Code added two integration tests that drive a real
+  401 instead (`e315789`): a write that 401s, and a token already
+  present at startup that the server rejects on the first write; both
+  passed unchanged, confirming the flow already worked.
+- Read-only clarity (`6949b4a`): an info `Alert` with its own Login
+  link above the employee filters when logged out; the AppBar's Login
+  switched to a prominent `variant="contained"` button; a "Logged in"
+  chip appears next to Logout when logged in. Mutation-checked by
+  forcing the alert to always render: the "hidden when logged in" test
+  failed as expected, then reverted.
+
+**3. Final UI round**
+- Navbar (`84cab97`): the active link gets `aria-current="page"` plus
+  an indigo colour and underline (via `useMatch` per route, not
+  `NavLink`'s own `className`/`style` function props, which don't
+  compose through MUI `Button`'s `component` slot); the brand mark
+  links to the employees route (which is `/` in this app -- there's no
+  literal `/employees` path); at 390px, Employees/Insights collapse
+  into a hamburger menu with the same active styling, keeping the
+  brand icon and Login/Logout visible; Login shows its own active
+  state on `/login`. Mutation-checked by hard-coding the desktop nav's
+  `aria-current` to always point at Insights: both the `/`-route and
+  `/login`-route active-link tests failed as expected.
+- Login page redesign (`df37cde`): a two-panel layout at `md` and
+  above (an indigo-gradient brand panel, theme tokens only, no image,
+  beside the form) and form-only below `md`; the form is centred both
+  ways in the viewport below the AppBar (`AppLayout`'s root became a
+  `minHeight: 100vh` flex column so a short page like this one gets
+  the full remaining height, while a tall page like the employee table
+  still grows past `100vh` and scrolls normally); a show/hide password
+  toggle; a loading/disabled submit button; a generic "Incorrect
+  username or password" alert on a 401 (the server's own wording is
+  never shown) that clears the password field; a different generic
+  message for any other failure; a "Continue browsing read-only" link;
+  and a redirect to the employee list if already logged in while
+  visiting `/login`. A real bug was caught here, not assumed fixed by
+  analogy: the old code called `login(token)` *and* an explicit
+  `navigate(state.from)` in the same success handler, but `login()`
+  re-renders the page with `isLoggedIn` true before that explicit
+  navigate's effect lands, so the new already-logged-in guard was
+  winning the race and always landing on `/`, silently discarding
+  `state.from`. Fixed by deleting the explicit `navigate()` call and
+  having the guard itself redirect to `state?.from ?? '/'`, so there's
+  one redirect path instead of two competing ones. Mutation-checked by
+  removing the clear-password-on-error behaviour: the relevant test
+  failed, then reverted.
+- Insights redesign (`edeeae3`): a page header stating the currency
+  rule; the summary table and the chart each moved into their own
+  `Card` with an `h3` heading; headcount formatted with thousands
+  separators; the selected row gets an inset box-shadow accent (not
+  `border-left`, which isn't reliably rendered on a `<tr>` under table
+  layout rules in every browser) plus `aria-selected` and keyboard
+  support (`tabIndex 0`, Enter/Space); a visible group `Select` in the
+  chart's own card header, wired to the same `selectedKey` state the
+  table's row clicks already drove; chart bars in the theme's primary
+  colour; a "Employees" y-axis title; x-axis labels in compact
+  notation with the currency (e.g. "$50K-$68.8K", "¥6.7M-¥8.5M"), via
+  a new `formatCompactMoney` that passes the money string straight to
+  `Intl.NumberFormat#format` (which accepts a numeric string directly,
+  per the ECMA-402 spec, rather than going through `Number()`/
+  `parseFloat` first); a tooltip value line with the full precise
+  range, count, and percentage of the group. Mutation-checked by
+  making the group selector's `onChange` a no-op: the
+  selector-to-row-sync integration test failed as expected, then
+  reverted.
+- Deviations recorded: the tooltip wasn't built as a fully custom
+  layout -- the axis header still shows the compact label, with the
+  precise range/count/percentage appended to the value line instead,
+  since a fully custom tooltip needs importing `@mui/x-charts`'
+  internal hooks; `aria-selected` on a plain `<tr>` is, strictly, only
+  valid ARIA inside `role="grid"`/`treegrid`, not a plain `table` --
+  implemented as asked rather than restructuring the whole table to a
+  grid; `tickLabelInterval` changed from MUI's default `'auto'` to
+  always-show except at `xs` (thinned to every other label), since
+  `'auto'` hides labels unpredictably based on measured container
+  width; the chart's label-building logic was pulled out into
+  `utils/distributionLabels.ts` and unit-tested as plain functions,
+  because `@mui/x-charts` sizes itself from the container's measured
+  width and jsdom reports that as zero (no real layout engine), so the
+  chart never renders visible tick-label text in any test environment
+  regardless of whether the code is correct.
+- Tests: 174 at the end of this round.
+
+**4. The insights scrollbar investigation (the most instructive part)**
+- Symptom: unnecessary horizontal and vertical scrollbars on
+  `/insights`, visible to me but not to Claude Code, which has no
+  browser.
+- Attempt 1, reasoned from source alone (`6ec76b5`): added
+  `minWidth: 0` to the chart/table's flex-column children and hid the
+  chart's legend. It did not fix it.
+- I then ran a diagnostic in the browser console myself (page
+  `scrollWidth` vs `clientWidth`, which elements sit past the right
+  edge, which element is lowest on the page, whether anything has its
+  own scrollbar). It showed the chart's visually-hidden text-
+  alternative `<table>` was the only element past the right edge: the
+  page was 24px too wide (1327 vs 1303).
+- Attempt 2 (`8573dba`): moved the clipping styles onto a wrapping
+  `<div>`, reasoning from a real, documented CSS mechanism (a
+  `<table>`'s `<caption>` is laid out in the table's own anonymous
+  wrapper box, which the table's `overflow` doesn't reach). Claude
+  Code reported being "confident in this one without seeing it." **It
+  was wrong.** My second diagnostic, run at 1440px against this fix,
+  still showed the same wrapper as both the only element past the
+  right edge (1344 vs 1303, 41px) and the lowest element on the whole
+  page (bottom edge at page Y 2189, while the real content -- the
+  table inside it -- ended at Y 1637, about 550px of pure empty scroll
+  height). Hiding that one element in the console dropped `scrollWidth`
+  to equal `clientWidth` and `scrollHeight` from 2189 to 1406.
+- Fix (`90d58d0`): removed the visually-hidden approach entirely
+  rather than trying a third CSS variant, and replaced it with a
+  visible, collapsed-by-default "Show data table" / "Hide data table"
+  disclosure button (`aria-expanded`, `aria-controls`) that
+  conditionally renders a normal, visible table -- unmounted while
+  collapsed, so it cannot affect layout at all, clipped or not -- with
+  caption, range, count, and a new percentage-of-group column; the
+  chart keeps `role="img"` with an `aria-label` naming the group and
+  its total headcount, plus `aria-describedby` pointing at the table
+  only while it's open. Searched the whole frontend for the same
+  clip-rect/visually-hidden/absolutely-positioned-hidden-content
+  pattern: none found anywhere else. Mutation-checked by rendering the
+  table unconditionally: the "collapsed by default" test failed as
+  expected, then reverted. 178 tests.
+
+**5. Deployment checks during this period**
+- A live preflight check for `DELETE` from the Vercel origin returned
+  200 with the explicit method and header lists, confirming the
+  explicit CORS configuration (hardened in Session 4, flagged as
+  possibly stale in Session 5) is actually deployed on Render --
+  Session 5's open item about a CORS/deployed-commit mismatch is
+  resolved.
+- `GET /meta/countries` returned 404 on the live API at the time I
+  checked, because Render had not yet deployed S7. **TODO (me):** note
+  when S7 is deployed and confirm the live add/edit form actually
+  works end to end against it.
+- The database on Render still resets on every restart (carried over
+  from Session 5 -- a known, accepted limit of the free tier, not a
+  bug).
+
+**Result (fresh runs, end of this session):** `uv run pytest` -- 434
+passed, ruff and strict mypy clean (backend untouched this session).
+`yarn test` -- 178 passed (22 test files).
+
+**Open items:**
+- Set a new production password before submission and share it with
+  reviewers by email, not in the repo (see section 1).
+- Re-test the salary-decimal scenario on current `main` (section 2).
+- Confirm S7 is actually live on Render and the add/edit form works
+  against it (section 5).
+- README, a Mermaid architecture diagram, and a demo video are still
+  outstanding (not started this session).
+- Re-check that the insights route is still lazy-loaded after this
+  session's changes (the bundle-size table in design-notes.md is from
+  before the final UI round; the route's own `React.lazy`/`Suspense`
+  wiring wasn't touched, but the number itself hasn't been re-measured
+  since).
+
+**What I learned:** A green test suite and careful source reading
+could not find a real layout bug that a 20-line browser console
+diagnostic found in minutes -- measure in a real browser before
+changing CSS to fix something you can't see. A "visually hidden"
+trick can still enlarge the document even when it's reasoned about
+correctly on paper, and a visible disclosure turned out to be both
+simpler to get right and more useful to a sighted user too. And my
+own manual test steps need to match how the app actually stores
+state -- testing a reload-dependent assumption (the token's origin)
+against an in-memory store that doesn't reload proved nothing.
