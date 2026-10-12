@@ -2,6 +2,12 @@ import { HttpResponse, http } from 'msw'
 
 import type { LoginRequest, LoginResponse } from '../types/auth'
 import type { Employee, EmployeeListResponse, EmployeeOptions } from '../types/employee'
+import type {
+  CountryInsightsResponse,
+  DepartmentInsightsResponse,
+  DistributionBucket,
+  JobTitleInsightsResponse,
+} from '../types/insights'
 import type { CountryMeta } from '../types/meta'
 
 // Keep this in sync with VITE_API_URL used in tests (see src/test/setup.ts).
@@ -56,6 +62,83 @@ export const TEST_USERNAME = 'hr'
 export const TEST_PASSWORD = 'test-password'
 export const TEST_TOKEN = 'test-token'
 
+const sampleDistribution: DistributionBucket[] = [
+  { range_min: '0.00', range_max: '50000.00', count: 10 },
+  { range_min: '50000.00', range_max: '100000.00', count: 25 },
+  { range_min: '100000.00', range_max: '150000.00', count: 5 },
+]
+
+export const defaultCountryInsights: CountryInsightsResponse = {
+  groups: [
+    {
+      country: 'US',
+      currency: 'USD',
+      headcount: 50,
+      min: '40000.00',
+      max: '200000.00',
+      average: '95000.00',
+      median: '90000.00',
+      distribution: sampleDistribution,
+    },
+    {
+      country: 'IN',
+      currency: 'INR',
+      headcount: 120,
+      min: '500000.00',
+      max: '3000000.00',
+      average: '1200000.00',
+      median: '1100000.00',
+      distribution: sampleDistribution,
+    },
+  ],
+}
+
+export const defaultDepartmentInsights: DepartmentInsightsResponse = {
+  groups: [
+    {
+      department: 'Engineering',
+      headcount: 80,
+      min: '60000.00',
+      max: '220000.00',
+      average: '110000.00',
+      median: '100000.00',
+      distribution: sampleDistribution,
+    },
+    {
+      department: 'Sales',
+      headcount: 30,
+      min: '50000.00',
+      max: '180000.00',
+      average: '90000.00',
+      median: '85000.00',
+      distribution: sampleDistribution,
+    },
+  ],
+}
+
+export const defaultJobTitleInsights: JobTitleInsightsResponse = {
+  groups: [
+    {
+      job_title: 'Engineer',
+      headcount: 60,
+      min: '60000.00',
+      max: '200000.00',
+      average: '105000.00',
+      median: '98000.00',
+      distribution: sampleDistribution,
+    },
+    {
+      job_title: 'Sales Manager',
+      headcount: 20,
+      min: '55000.00',
+      max: '170000.00',
+      average: '92000.00',
+      median: '88000.00',
+      distribution: sampleDistribution,
+    },
+  ],
+}
+
 export const handlers = [
   http.get(`${API_BASE_URL}/employees`, () => {
     const body: EmployeeListResponse = {
@@ -68,6 +151,11 @@ export const handlers = [
   }),
   http.get(`${API_BASE_URL}/employees/options`, () => HttpResponse.json(defaultOptions)),
   http.get(`${API_BASE_URL}/meta/countries`, () => HttpResponse.json(defaultCountries)),
+  http.get(`${API_BASE_URL}/insights/country`, () => HttpResponse.json(defaultCountryInsights)),
+  http.get(`${API_BASE_URL}/insights/department`, () =>
+    HttpResponse.json(defaultDepartmentInsights),
+  ),
+  http.get(`${API_BASE_URL}/insights/job-title`, () => HttpResponse.json(defaultJobTitleInsights)),
   http.post(`${API_BASE_URL}/auth/login`, async ({ request }) => {
     const body = (await request.json()) as LoginRequest
     if (body.username === TEST_USERNAME && body.password === TEST_PASSWORD) {

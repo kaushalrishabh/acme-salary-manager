@@ -16,6 +16,7 @@ const groups: SummaryGroup[] = [
     max: '200000.00',
     average: '95000.00',
     median: '90000.00',
+    distribution: [],
   },
   {
     key: 'IN',
@@ -25,6 +26,7 @@ const groups: SummaryGroup[] = [
     min: '500000.00',
     max: '3000000.00',
     average: '1200000.00',
+    distribution: [],
     median: '1100000.00',
   },
 ]

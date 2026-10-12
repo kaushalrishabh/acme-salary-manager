@@ -52,7 +52,7 @@ describe('App routing', () => {
   it('navigates back to Employees via the nav link', async () => {
     const user = userEvent.setup()
     renderApp('/insights')
-    await screen.findByText('Insights dashboard coming soon.')
+    await screen.findByRole('tab', { name: 'Country' })
 
     await user.click(screen.getByRole('link', { name: 'Employees' }))
 
@@ -86,7 +86,7 @@ describe('App session-expired handling', () => {
   it('a session expiring redirects to /login with the session-expired message', async () => {
     setToken('tok123')
     renderApp('/insights')
-    await screen.findByText('Insights dashboard coming soon.')
+    await screen.findByRole('tab', { name: 'Country' })
 
     notifySessionExpired()
 
