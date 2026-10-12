@@ -1139,3 +1139,143 @@ simpler to get right and more useful to a sighted user too. And my
 own manual test steps need to match how the app actually stores
 state -- testing a reload-dependent assumption (the token's origin)
 against an in-memory store that doesn't reload proved nothing.
+
+### 2026-10-12 Session 7: deployment, S6/S7 frontend, the insights scrollbar investigation, and the docs pass
+
+Most of what follows was already captured session-by-session as it
+happened (Sessions 4, 5, and 6); this entry adds detail I wanted
+written down more precisely, plus the brand-new docs pass (section D).
+Where something is a plain repeat of an earlier entry, I've pointed at
+it rather than retyping it.
+
+**A) Deployment (Render + Vercel)**
+- Render's first deploy failed at startup with "AUTH_SECRET_KEY
+  environment variable must be set" -- the intended fail-fast design
+  working, not a bug, since the env vars hadn't been set on Render yet.
+  Fixed by setting them and redeploying. (Full detail: Session 5.)
+- Locally, a blank `DATABASE_URL=` in `.env` crashed startup with
+  `sqlalchemy.exc.ArgumentError` ("Could not parse SQLAlchemy URL").
+  Fixed with one shared `get_env()` helper that treats a blank value
+  the same as unset everywhere in the backend -- which also closed a
+  real correctness gap, not just a crash: a blank `HR_USERNAME` env var
+  previously meant an empty *submitted* username could authenticate,
+  since the old check was `is None`, not "blank". (Full detail: Session
+  5.)
+- CORS: I (in the separate review chat) suspected the write routes'
+  preflight might be silently rejected under Starlette's bare
+  defaults, since the test suite at that point only checked a simple
+  `GET`. Claude Code checked its own code and found it already used
+  explicit wildcards (`allow_methods=["*"]`, `allow_headers=["*"]`), so
+  there was no actual bug to fix. The change to an explicit method/
+  header list was hardening (more auditable than `"*"`), not a bug fix.
+  (Full detail: Session 4.)
+- Live verification via curl: employee list 200, an unauthenticated
+  write 401, login returns a token, an authenticated create then
+  delete round-trips correctly. (Full detail: Session 5.)
+- `GET /meta/countries` returned 404 on the live API after S7 shipped,
+  because Render was still running an older commit. Resolved by
+  redeploying the latest commit. **TODO:** confirm with a live curl
+  that `/meta/countries` now returns JSON (this entry supersedes the
+  open TODO Session 6 recorded for the same 404).
+
+**B) S6 / S7 frontend**
+- S6 (the employee table) and the four rounds of UI polish that
+  followed it -- sortable columns, clearable (x) filter buttons,
+  full-width filters, centred headers/cells, full country names
+  instead of codes, mobile pagination -- are fully written up in
+  Session 5; not repeating that detail here.
+- The desktop horizontal scrollbar (round 4) was found the same way
+  most of these were: from my own screenshot, since Claude Code has no
+  browser. Already covered in Session 5.
+- S7 -- login, the employee add/edit form, the insights dashboard, and
+  a kebab-menu Actions column visible only when logged in -- is fully
+  written up in Session 6.
+- S7 walkthrough, session-expiry finding, stated more precisely than
+  in Session 6: my first manual test was flawed because I corrupted
+  the token in `sessionStorage` *without reloading* -- the app holds
+  the token in memory and only re-reads `sessionStorage` at page load,
+  so a corruption with no reload in between has no effect at all. The
+  test that would actually exercise this is corrupt the stored token,
+  *reload*, then attempt a write. Claude Code didn't rely on me
+  reproducing that manually either way -- it added two integration
+  tests that drive a real 401 directly (a write that 401s; a token
+  already present at startup that the server rejects on the first
+  write), both of which passed unchanged.
+- S7 walkthrough, salary-decimals finding (Session 6 has the full
+  detail): I reported no field error in the browser for `6500000.505`
+  on a JPY employee. A curl straight at the backend showed it already
+  returns the correct 422 ("too many decimal places (at most 0
+  allowed)"). Claude Code read the form code end to end, found nothing
+  that rounds or trims the typed value, added a test pinning my exact
+  scenario (it passed against unmodified code), and changed no code,
+  since it found nothing to fix. **TODO:** retest on current `main` and
+  confirm whether this still reproduces.
+
+**C) Insights scrollbar investigation**
+- Full numbers and reasoning are in Session 6: two source-reasoned
+  fixes from Claude Code (`minWidth: 0`/hiding the legend, then moving
+  the visually-hidden table's clip styles onto a wrapping div) did not
+  work, because Claude Code can't see the UI and was reasoning about
+  CSS it couldn't verify. A browser console diagnostic I ran (page
+  `scrollWidth`/`clientWidth`/`scrollHeight`, which elements sit past
+  the right edge, which is lowest on the page) found the chart's
+  visually-hidden table wrapper was the one element responsible both
+  times -- 1344 vs 1303 width, bottom edge at 2189 vs the real content
+  at 1637. Hiding that one element in the console confirmed it: 1303/
+  1303 and `scrollHeight` down to 1406.
+- Final fix: removed the visually-hidden table entirely and replaced
+  it with a visible, collapsed-by-default "Show data table" disclosure
+  (plain conditional rendering, not a CSS trick). **I confirmed this
+  fixed it** -- the scrollbars are gone.
+- The final UI round from the same session (navbar active-page state,
+  the login page redesign, the insights page's cards/group-selector/
+  compact-label improvements) is fully written up in Session 6.
+
+**D) Docs pass**
+- Wrote `README.md` from scratch (what the project is, live URLs, free-
+  tier caveats, features, tech stack with reasoning, an embedded system
+  diagram, full run-locally steps, test commands with current counts,
+  the API table, key decisions, measured performance, how AI was used,
+  known limitations) and a new `docs/architecture.md` with three
+  Mermaid diagrams (system, backend layering, a login-then-
+  authenticated-create sequence diagram) -- all three actually rendered
+  with `@mermaid-js/mermaid-cli` locally to confirm valid syntax before
+  committing, not just reasoned about. `docs/requirements.md` got two
+  small additions: the reasoning for the single shared login (synthetic
+  data, no role management in scope) and an explicit statement that
+  reads are public -- both already true of the app, just not stated
+  together as a final decision before. (Commits `b908788`, `8b2af21`,
+  `c777dad`.)
+- **Claude Code caught its own documentation bug** by actually
+  following the README it had just written, in a clean rsync'd copy of
+  the repo with throwaway credentials, rather than trusting what it had
+  written: the literal command it had documented
+  (`uv run uvicorn app.main:app --reload`) doesn't read `.env` at all,
+  and crashes with the same "AUTH_SECRET_KEY" error as the real Render
+  incident above. Fixed by adding `--env-file .env` to the documented
+  command, then re-ran the fixed instructions from scratch to confirm
+  the backend boots, seeds, and answers `/health` and `/auth/login`,
+  and that the frontend installs and builds. A follow-up pass (commit
+  `633f35c`) added a few more reviewer-facing corrections: making
+  `SEED_ON_EMPTY=true` an explicit step rather than a note below the
+  commands (the flag defaults to false, so a fresh clone otherwise shows
+  an empty table), restating the cold-start time as ~30-60s, and
+  dropping two links to `docs/deployment.md` now that its facts are
+  stated directly inline.
+- Secret scan of every tracked file (`git grep -n -i -E
+  "password|secret"`): every hit is a field/variable name
+  (`HR_PASSWORD`, `AUTH_SECRET_KEY`), code that reads those names, an
+  obvious test placeholder, or documentation prose describing the auth
+  design -- no real credential value is committed anywhere. Separately
+  noted here for the record: the production HR password appeared once
+  in a chat/report (Session 6), not in any commit. **TODO:** confirm
+  the production password has actually been rotated.
+
+**What I learned:** Several of this session's findings were corrections
+to *my own* earlier test setup or documentation, not just Claude Code's
+code -- a manual test step that doesn't match how the app actually
+persists state (session expiry) and a run-locally instruction that
+looked right but had never actually been executed (the missing
+`--env-file`) both passed a read-through and both failed the moment
+someone actually ran them. Reading carefully and running the thing are
+not substitutes for each other, for a person or for an AI.
