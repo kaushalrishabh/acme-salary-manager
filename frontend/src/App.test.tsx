@@ -142,8 +142,8 @@ describe('App read-only alert', () => {
     expect(screen.getByText(/viewing in read-only mode/i)).toBeInTheDocument()
 
     await user.click(within(screen.getByRole('alert')).getByRole('link', { name: 'Login' }))
-    await user.type(screen.getByLabelText(/username/i), TEST_USERNAME)
-    await user.type(screen.getByLabelText(/password/i), TEST_PASSWORD)
+    await user.type(screen.getByLabelText('Username'), TEST_USERNAME)
+    await user.type(screen.getByLabelText('Password'), TEST_PASSWORD)
     await user.click(screen.getByRole('button', { name: /log in/i }))
 
     await screen.findByText('Ada Lovelace')
@@ -180,8 +180,8 @@ describe('App session-expired handling', () => {
     expect(await screen.findByText(/session expired, please log in again/i)).toBeInTheDocument()
     expect(getToken()).toBeNull()
 
-    await user.type(screen.getByLabelText(/username/i), TEST_USERNAME)
-    await user.type(screen.getByLabelText(/password/i), TEST_PASSWORD)
+    await user.type(screen.getByLabelText('Username'), TEST_USERNAME)
+    await user.type(screen.getByLabelText('Password'), TEST_PASSWORD)
     await user.click(screen.getByRole('button', { name: /log in/i }))
 
     // Back on the page the 401 happened on (the employee list -- the only

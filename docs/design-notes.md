@@ -1127,6 +1127,42 @@ brand mark/name link to the employees route, which is `/` in this
 app's routing (there is no literal `/employees` path) -- read as "the
 employees page," consistent with the existing "Employees" nav button.
 
+**3. Login page redesign.** Two-panel (`md`+: indigo-gradient brand panel
++ form; below `md`: form only), centered both ways in the viewport
+below the `AppBar`. Centering reaches the whole page, not just this
+component: `AppLayout`'s root is now a `minHeight: '100vh'` flex column
+with `Container` as a `flexGrow: 1` child, so a short page (this one)
+gets the full remaining height to center within, while a tall page
+(the employee table, insights) still grows past `100vh` and the page
+scrolls normally -- `minHeight`, not `height`, is what keeps both true
+at once. The gradient is `theme.palette.primary.main` ->
+`.dark`, no image asset.
+
+A real bug, caught by the "returns to the page the user came from"
+test, not assumed correct by analogy with the old version: the old
+`onSuccess` called `login(token)` *and* an explicit `navigate(state
+.from ?? '/')`. `login()` updates `authStore` synchronously, which
+re-renders `LoginPage` with `isLoggedIn` now true *before* the
+explicit `navigate()` call's effect lands -- so the new already-
+logged-in guard (`if (isLoggedIn) return <Navigate to="/" />`, needed
+for "visiting /login while logged in redirects to /employees") was
+winning the race and always landing on `/`, silently discarding
+`state.from`. Fixed by deleting the explicit `navigate()` call and
+making the guard itself redirect to `state?.from ?? '/'` -- one
+redirect path serves both requirements instead of two competing ones.
+
+Wrong credentials show one generic `"Incorrect username or password"`
+regardless of the server's actual wording (so the server's message
+text is never load-bearing for the UI, only its 401 status is); any
+other failure (network, 500) shows a different generic message. The
+password field is cleared after either case lands as an error, so a
+mistyped password doesn't resubmit by habit.
+
+`getByLabelText(/password/i)` (regex) in the existing tests started
+matching the new show/hide toggle too, since its `aria-label`
+("Show password"/"Hide password") also contains "password" --
+switched every such query to the exact string `'Password'`.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's

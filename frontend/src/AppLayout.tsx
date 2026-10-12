@@ -89,7 +89,12 @@ export function AppLayout() {
   }
 
   return (
-    <>
+    // minHeight (not height): a page taller than the viewport (the
+    // employee table, insights) still grows past 100vh and the page
+    // scrolls normally; a short page (the login form) gets the full
+    // remaining height to center itself in, via the Container below being
+    // a flex child with flexGrow: 1.
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <AppBar position="static">
         <Toolbar sx={{ gap: 1.5 }}>
           <Box
@@ -184,10 +189,14 @@ export function AppLayout() {
           1536px): the employee table needs ~1680px to lay out without a
           horizontal scrollbar at 1920px; Container's own responsive
           gutters still apply regardless of maxWidth. */}
-      <Container component="main" maxWidth={false} sx={{ maxWidth: 1680, py: 4 }}>
+      <Container
+        component="main"
+        maxWidth={false}
+        sx={{ maxWidth: 1680, py: 4, flexGrow: 1, display: 'flex', flexDirection: 'column' }}
+      >
         <Outlet />
       </Container>
       <GlobalSnackbar />
-    </>
+    </Box>
   )
 }
