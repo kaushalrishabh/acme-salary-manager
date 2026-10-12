@@ -882,6 +882,77 @@ sessionExpired: true } })`), since it's the one place `useNavigate`/
 `location.state` both to show "Session expired, please log in again"
 and to return to the page the user came from after logging back in.
 
+## S7: employee form, Actions column, and the global Snackbar
+
+**Form error mapping** (`src/utils/apiErrorToFieldErrors.ts`): a 422's
+field errors each go to their own field (`loc` is `["body", "<field>",
+...]`, so `loc[1]` is the field name); a 409 (duplicate email) always
+goes to the `email` field, with the server's own message; anything else
+(a network failure, a 500) has no specific field, so it returns `null`
+and the caller shows it via the global Snackbar instead.
+
+**Client-side validation is deliberately rough**: required fields, and
+one currency-agnostic decimal pattern (`/^\d+(\.\d+)?$/`) for the salary
+-- matching the project's own convention that business rules (exact
+format, per-currency decimal limits) stay server-side, enforced once by
+`app.money.parse_major_to_minor`. The salary is sent to the API exactly
+as the string the user typed, never parsed to a number client-side.
+
+**Country is a Select from `/meta/countries`**, not an Autocomplete
+(Department/Job title are, since those need free text entry too) --
+labelled via the frontend's own `formatCountryName`, with a helper text
+showing the selected country's currency and decimal places (e.g. "JPY,
+no decimals"), so the user knows what they're about to type a number in
+before they type it.
+
+**A global Snackbar, not a per-dialog one** (`src/notifications/`):
+`noticeStore.ts` is plain code (the same external-store pattern as
+`authStore.ts`), so a mutation's `onError`/`onSuccess` callback -- not
+just a component -- can trigger a message; one `<GlobalSnackbar/>`
+mounted once in `AppLayout` shows it on every route.
+
+**Two real bugs, both in the form dialog's "reset form state on open"
+logic**, found by the edit-mode tests actually failing rather than
+assumed correct:
+1. The first version used a `useEffect`, which
+   `eslint-plugin-react-hooks`'s `set-state-in-effect` rule flags (the
+   same finding hit for `useSlowRequest` and the table's own page-reset
+   logic earlier) -- switched to a render-time comparison against the
+   previous render (open transitions only), React's documented pattern.
+2. That render-time version then missed the dialog's actual usage: it
+   only detects a *change* in `open`, but every caller (every test, and
+   the real table) renders the dialog already open rather than
+   transitioning into it, so Edit's prefill never ran at all. Fixed with
+   a lazy `useState` initializer that also reads `employee` on the very
+   first render, not only inside the transition-reset block.
+
+**Actions column and width budget.** The kebab menu (Edit/Delete) and
+the "Add employee" button are both gated on `useAuth().isLoggedIn`; when
+logged out, the Actions column doesn't render at all (not just hidden),
+so the column count itself is 8 vs. 9 and the skeleton/empty-state
+`colSpan` both read a computed `columnCount`, not a constant. The lg+
+column-width budget (round 4's table-alignment work) was re-tuned to
+make room for a 5% Actions column, trimming roughly 1 point each from
+Name/Email/Job title/Department/Country:
+
+| Column | Round 4 | Now |
+|---|---|---|
+| Name | 12% | 11% |
+| Email | 19% | 18% |
+| Job title | 17% | 16% |
+| Department | 10% | 9% |
+| Country | 12% | 11% |
+| Salary | 10% | 10% |
+| Salary (USD) | 10% | 10% |
+| Hire date | 9% | 9% |
+| Actions | -- | 5% |
+
+These percentages sum to 99% when Actions is present (logged in). Logged
+out, the same percentages (Actions simply isn't rendered) sum to 94%,
+leaving an unused sliver of width at the table's right edge -- accepted
+as a harmless cosmetic difference rather than maintaining two separate
+width budgets for the two login states.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
