@@ -39,8 +39,11 @@ Data model, conversion rules and trade-offs: [design-notes.md](design-notes.md).
 - **Pagination:** offset-based with indexed sort columns; adequate at 10k rows.
 - **Layering:** router -> service -> repository -> model, so business logic
   is unit-testable without HTTP.
-- **Auth:** one shared HR login from environment variables, gating the public
-  demo's edit/delete endpoints. No user management or roles.
+- **Auth:** one shared HR login from environment variables -- acceptable
+  because the data is synthetic and there is no role management in scope
+  (one persona, nobody to approve; see below). Every read (browsing,
+  search, insights) is public; only create, edit, and delete require it.
+  No user management or roles.
 - **Persistence:** SQLite for the exercise; schema stays Postgres-compatible.
 
 ## Deliberately Left Out
