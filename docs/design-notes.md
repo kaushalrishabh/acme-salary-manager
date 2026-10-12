@@ -1112,6 +1112,21 @@ of a table clipping itself. Checked the rest of the frontend for the
 same pattern: this was the only visually-hidden element in the
 codebase, so nothing else needed the same fix.
 
+**2. Navbar active-page indication.** `useMatch({ path, end: true })`
+per route (not `NavLink`'s own `className`/`style` function props --
+those don't compose cleanly through MUI `Button`'s `component` slot,
+which expects a plain string `className`, not a function) drives one
+shared `aria-current="page"` + styling rule, applied identically to
+the desktop nav buttons, the xs menu's items, and the Login button
+when it's the active route. At `xs`, `Employees`/`Insights` collapse
+into a hamburger `IconButton` (`aria-label="Open navigation menu"`)
+opening a `Menu` with the same active styling on its `MenuItem`s; the
+brand *text* hides at `xs` (brief: "keep the brand icon ... visible" --
+text wasn't guaranteed), the icon stays and still links home. The
+brand mark/name link to the employees route, which is `/` in this
+app's routing (there is no literal `/employees` path) -- read as "the
+employees page," consistent with the existing "Employees" nav button.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's

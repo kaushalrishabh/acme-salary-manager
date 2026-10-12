@@ -92,6 +92,48 @@ describe('App auth-aware AppBar', () => {
   })
 })
 
+describe('App navbar active-page indication', () => {
+  it('marks Employees active (and only Employees) at /', async () => {
+    renderApp('/')
+    await screen.findByRole('textbox', { name: /search/i })
+    const appBar = within(screen.getByRole('banner'))
+
+    expect(appBar.getByRole('link', { name: 'Employees' })).toHaveAttribute('aria-current', 'page')
+    expect(appBar.getByRole('link', { name: 'Insights' })).not.toHaveAttribute('aria-current')
+    expect(appBar.getByRole('link', { name: 'Login' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('marks Insights active (and only Insights) at /insights', async () => {
+    renderApp('/insights')
+    await screen.findByRole('tab', { name: 'Country' })
+    const appBar = within(screen.getByRole('banner'))
+
+    expect(appBar.getByRole('link', { name: 'Insights' })).toHaveAttribute('aria-current', 'page')
+    expect(appBar.getByRole('link', { name: 'Employees' })).not.toHaveAttribute('aria-current')
+    expect(appBar.getByRole('link', { name: 'Login' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('marks Login active at /login', async () => {
+    renderApp('/login')
+    const appBar = within(screen.getByRole('banner'))
+
+    expect(appBar.getByRole('link', { name: 'Login' })).toHaveAttribute('aria-current', 'page')
+    expect(appBar.getByRole('link', { name: 'Employees' })).not.toHaveAttribute('aria-current')
+    expect(appBar.getByRole('link', { name: 'Insights' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('the xs nav menu lists both Employees and Insights', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+    await screen.findByRole('textbox', { name: /search/i })
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+
+    expect(await screen.findByRole('menuitem', { name: 'Employees' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Insights' })).toBeInTheDocument()
+  })
+})
+
 describe('App read-only alert', () => {
   it('shows the read-only alert when logged out, and it disappears after logging in', async () => {
     const user = userEvent.setup()
