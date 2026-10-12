@@ -161,6 +161,49 @@ describe('EmployeeFormDialog: add mode', () => {
     expect(await screen.findByText('not a valid amount')).toBeInTheDocument()
   })
 
+  it('sends a salary with too many decimal places exactly as typed, and maps the server 422 to the salary field without saving', async () => {
+    let capturedBody: Record<string, unknown> | undefined
+    server.use(
+      http.post(`${API_BASE_URL}/employees`, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          {
+            detail: [
+              {
+                loc: ['body', 'annual_gross_salary'],
+                msg: 'too many decimal places (at most 0 allowed)',
+                type: 'value_error',
+              },
+            ],
+          },
+          { status: 422 },
+        )
+      }),
+    )
+    const user = userEvent.setup()
+    const { onClose } = renderDialog()
+
+    await user.type(screen.getByLabelText(/full name/i), 'Ada Lovelace')
+    await user.type(screen.getByLabelText(/^email/i), 'ada@example.com')
+    await user.type(screen.getByLabelText(/job title/i), 'Engineer')
+    await user.type(screen.getByLabelText(/department/i), 'Engineering')
+    await user.click(await screen.findByLabelText(/country/i))
+    await user.click(await screen.findByRole('option', { name: 'Japan' }))
+    await user.type(screen.getByLabelText(/annual gross salary/i), '6500000.505')
+    const hireDateInput = screen.getByLabelText(/hire date/i)
+    await user.clear(hireDateInput)
+    await user.type(hireDateInput, '2020-01-01')
+
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    await waitFor(() => expect(capturedBody).toBeDefined())
+    expect(capturedBody?.annual_gross_salary).toBe('6500000.505')
+    expect(
+      await screen.findByText('too many decimal places (at most 0 allowed)'),
+    ).toBeInTheDocument()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('maps a 409 to the email field with the server message', async () => {
     server.use(
       http.post(`${API_BASE_URL}/employees`, () =>
