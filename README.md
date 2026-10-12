@@ -11,17 +11,19 @@ see salary insights by country, department and job title.
 - API: https://acme-salary-manager-7nys.onrender.com (interactive docs at
   [`/docs`](https://acme-salary-manager-7nys.onrender.com/docs))
 
-The reviewer login is provided in the submission email, not in this repo.
+Reviewer HR credentials are provided in the submission email.
+
 Both run on free-tier hosting:
 
-- **Cold start:** if nobody has used it for 15+ minutes, the first
-  request can take about a minute while Render's free tier wakes the
-  backend up. Opening the API's `/health` URL first, then reloading the
-  app, is the quickest way through it.
-- **The demo database resets whenever the backend restarts** (free-tier
-  disks aren't persistent) and reseeds the same 10,000 employees
-  automatically. Anything added or edited through the UI doesn't survive
-  a restart. See [docs/deployment.md](docs/deployment.md).
+- **Cold start:** if nobody has used it for 15+ minutes, Render stops
+  the backend; the first request after that wakes it again, which can
+  take about 30-60 seconds. Opening the API's `/health` URL first, then
+  reloading the app, is the quickest way through it.
+- **Data resets on restart.** The backend stores data in a SQLite file
+  on Render's free-tier disk, which is not persistent -- every restart
+  (a redeploy, or a cold start after idling) loses it, and the backend
+  reseeds the same 10,000 employees automatically. Anything added or
+  edited through the UI doesn't survive a restart.
 
 ## Features
 
@@ -70,8 +72,10 @@ Data model, conversion rules and trade-offs: [docs/design-notes.md](docs/design-
 cd backend
 uv sync
 cp .env.example .env
-# Edit .env and fill in HR_USERNAME, HR_PASSWORD, and AUTH_SECRET_KEY
-# (the file's own comment shows a command to generate AUTH_SECRET_KEY).
+# Edit .env: fill in HR_USERNAME, HR_PASSWORD, and AUTH_SECRET_KEY (the
+# file's own comment shows a command to generate AUTH_SECRET_KEY), and
+# set SEED_ON_EMPTY=true -- it defaults to false, so a fresh clone
+# otherwise starts with an empty employee table.
 # DATABASE_URL and CORS_ALLOWED_ORIGINS already have working local defaults.
 uv run --env-file .env uvicorn app.main:app --reload
 ```
@@ -83,11 +87,10 @@ happens, not a hypothetical).
 
 The API is then at http://localhost:8000 (interactive docs at `/docs`).
 
-**Seed data:** there's no separate seed script to run -- set
-`SEED_ON_EMPTY=true` in `.env` before the first start, and the backend
-seeds 10,000 deterministic employees at startup if the table is empty.
-Measured: 0.16s on a laptop with a local SQLite file, 2.90s on Render's
-free tier (see [docs/deployment.md](docs/deployment.md)).
+**Seed data:** there is no standalone seed script -- seeding happens only
+via `SEED_ON_EMPTY=true` at startup (above), when the employees table is
+empty. Measured: 0.16s on a laptop with a local SQLite file, about 2.9s
+on Render's free tier, both for 10,000 employees.
 
 ### Frontend
 
