@@ -3,6 +3,7 @@ import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Container from '@mui/material/Container'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
@@ -49,11 +50,14 @@ export function AppLayout() {
             Insights
           </Button>
           {isLoggedIn ? (
-            <Button color="inherit" onClick={logout}>
-              Logout
-            </Button>
+            <>
+              <Chip label="Logged in" color="success" size="small" variant="outlined" />
+              <Button color="inherit" onClick={logout}>
+                Logout
+              </Button>
+            </>
           ) : (
-            <Button component={RouterLink} to="/login" color="inherit">
+            <Button component={RouterLink} to="/login" variant="contained" color="primary">
               Login
             </Button>
           )}

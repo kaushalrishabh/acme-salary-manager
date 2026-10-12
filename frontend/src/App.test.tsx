@@ -1,6 +1,6 @@
 import { ThemeProvider } from '@mui/material/styles'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
@@ -64,24 +64,48 @@ describe('App routing', () => {
 })
 
 describe('App auth-aware AppBar', () => {
-  it('shows a Login link when logged out', async () => {
+  it('shows a contained-primary Login link when logged out', async () => {
     renderApp()
     await screen.findByRole('textbox', { name: /search/i })
+    const appBar = within(screen.getByRole('banner'))
 
-    expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument()
+    const loginLink = appBar.getByRole('link', { name: 'Login' })
+    expect(loginLink).toBeInTheDocument()
+    expect(loginLink.className).toMatch(/MuiButton-contained/)
+    expect(appBar.queryByRole('button', { name: 'Logout' })).not.toBeInTheDocument()
+    expect(appBar.queryByText('Logged in')).not.toBeInTheDocument()
   })
 
-  it('shows a Logout button when logged in, and clicking it logs out', async () => {
+  it('shows a Logout button and a "Logged in" indicator when logged in, and clicking Logout logs out', async () => {
     setToken('tok123')
     const user = userEvent.setup()
     renderApp()
     await screen.findByRole('textbox', { name: /search/i })
-    expect(screen.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
+    const appBar = within(screen.getByRole('banner'))
+    expect(appBar.getByRole('button', { name: 'Logout' })).toBeInTheDocument()
+    expect(appBar.getByText('Logged in')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Logout' }))
+    await user.click(appBar.getByRole('button', { name: 'Logout' }))
 
-    expect(screen.getByRole('link', { name: 'Login' })).toBeInTheDocument()
+    expect(appBar.getByRole('link', { name: 'Login' })).toBeInTheDocument()
+    expect(appBar.queryByText('Logged in')).not.toBeInTheDocument()
+  })
+})
+
+describe('App read-only alert', () => {
+  it('shows the read-only alert when logged out, and it disappears after logging in', async () => {
+    const user = userEvent.setup()
+    renderApp('/')
+    await screen.findByText('Ada Lovelace')
+    expect(screen.getByText(/viewing in read-only mode/i)).toBeInTheDocument()
+
+    await user.click(within(screen.getByRole('alert')).getByRole('link', { name: 'Login' }))
+    await user.type(screen.getByLabelText(/username/i), TEST_USERNAME)
+    await user.type(screen.getByLabelText(/password/i), TEST_PASSWORD)
+    await user.click(screen.getByRole('button', { name: /log in/i }))
+
+    await screen.findByText('Ada Lovelace')
+    expect(screen.queryByText(/viewing in read-only mode/i)).not.toBeInTheDocument()
   })
 })
 

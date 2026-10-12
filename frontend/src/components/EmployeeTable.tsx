@@ -27,6 +27,7 @@ import {
 import { tablePaginationClasses } from '@mui/material/TablePagination'
 import type { ChangeEvent, MouseEvent } from 'react'
 import { useState } from 'react'
+import { Link as RouterLink } from 'react-router-dom'
 
 import { useEmployeeOptions, useEmployees } from '../api/employees'
 import { useAuth } from '../auth/useAuth'
@@ -271,6 +272,19 @@ export function EmployeeTable() {
 
   return (
     <Box>
+      {!isLoggedIn && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" component={RouterLink} to="/login">
+              Login
+            </Button>
+          }
+        >
+          You&apos;re viewing in read-only mode. Log in to add, edit or delete employees.
+        </Alert>
+      )}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 6, md: 3 }}>

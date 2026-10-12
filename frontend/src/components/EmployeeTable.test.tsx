@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { HttpResponse, http } from 'msw'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { setToken } from '../auth/authStore'
@@ -18,11 +19,15 @@ function renderTable() {
     // The real app theme, not MUI's default -- some behavior (e.g. the
     // Autocomplete clear indicator's forced visibility) is a theme-level
     // style override that only applies under this ThemeProvider, same as
-    // in production.
+    // in production. MemoryRouter: the read-only Alert's Login button is a
+    // react-router Link, which needs a Router context even outside the
+    // real app shell.
     <ThemeProvider theme={theme}>
       <QueryClientProvider client={queryClient}>
-        <EmployeeTable />
-        <GlobalSnackbar />
+        <MemoryRouter>
+          <EmployeeTable />
+          <GlobalSnackbar />
+        </MemoryRouter>
       </QueryClientProvider>
     </ThemeProvider>,
   )
@@ -495,5 +500,28 @@ describe('EmployeeTable CRUD actions', () => {
 
     expect(screen.getByRole('heading', { name: /delete employee/i })).toBeInTheDocument()
     expect(screen.getAllByText(/ada lovelace/i).length).toBeGreaterThan(0)
+  })
+})
+
+describe('EmployeeTable read-only alert', () => {
+  afterEach(() => {
+    setToken(null)
+  })
+
+  it('shows a read-only info alert with a Login link when logged out', async () => {
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    expect(screen.getByText(/viewing in read-only mode/i)).toBeInTheDocument()
+    const loginLink = screen.getByRole('link', { name: 'Login' })
+    expect(loginLink).toHaveAttribute('href', '/login')
+  })
+
+  it('does not show the read-only alert when logged in', async () => {
+    setToken('tok123')
+    renderTable()
+    await screen.findByText('Ada Lovelace')
+
+    expect(screen.queryByText(/viewing in read-only mode/i)).not.toBeInTheDocument()
   })
 })
