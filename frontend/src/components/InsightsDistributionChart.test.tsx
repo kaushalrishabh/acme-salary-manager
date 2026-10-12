@@ -39,6 +39,19 @@ describe('InsightsDistributionChart', () => {
     expect(within(table).getByText('$50,000.00–$100,000.00')).toBeInTheDocument()
   })
 
+  it('puts the clipping styles on a wrapping div, not the table itself (tables do not shrink/clip the way divs do)', () => {
+    renderChart()
+
+    const table = screen.getByRole('table', { hidden: true })
+    const wrapper = table.parentElement as HTMLElement
+
+    expect(wrapper.tagName).toBe('DIV')
+    expect(getComputedStyle(wrapper).position).toBe('absolute')
+    expect(getComputedStyle(wrapper).overflow).toBe('hidden')
+    expect(getComputedStyle(table).position).not.toBe('absolute')
+    expect(getComputedStyle(table).overflow).not.toBe('hidden')
+  })
+
   it('shows the range-bounds caption', () => {
     renderChart()
 

@@ -1088,6 +1088,30 @@ a `MemoryRouter` for the first time (a `react-router` `Link`, unlike
 the dialogs this component already rendered, needs a router context
 even in isolation).
 
+## S7 final UI round
+
+**1. Insights page horizontal scrollbar: the real cause.** The previous
+round's `minWidth: 0` fix addressed a real but secondary issue; a
+browser console diagnostic (`document.documentElement.scrollWidth` vs
+`clientWidth`, 24px apart at 1440px) found the actual culprit: the
+distribution chart's visually-hidden accessible `<table>` had its
+clipping styles (`position: absolute`, `width: 1`, `height: 1`,
+`overflow: hidden`, `clip: rect(0 0 0 0)`) applied directly to the
+`<table>` element itself. `overflow` on a `<table>` clips the table's
+own grid box, but a `<caption>` is laid out as a sibling inside the
+table's *anonymous wrapper box*, which that `overflow` does not reach
+-- so the caption (and the table's own auto-layout content width,
+which auto-layout tables compute from cell content regardless of an
+author-specified `width`) rendered at its natural size, poking out
+past the intended 1x1px clip and widening the whole page by exactly
+that amount. Fixed by moving every clipping style onto a plain
+wrapping `<div>` (a MUI `Box`) and leaving the `<table>` inside
+unstyled -- a div's `overflow: hidden` clips an oversized child
+regardless of the child's own content size, which is not reliably true
+of a table clipping itself. Checked the rest of the frontend for the
+same pattern: this was the only visually-hidden element in the
+codebase, so nothing else needed the same fix.
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's

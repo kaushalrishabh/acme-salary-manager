@@ -55,22 +55,32 @@ export function InsightsDistributionChart({
           series={[{ data: distribution.map((bucket) => bucket.count), label: 'Headcount' }]}
         />
       </Box>
-      <Box component="table" sx={visuallyHiddenSx}>
-        <caption>Salary distribution for {groupLabel}</caption>
-        <thead>
-          <tr>
-            <th>Range</th>
-            <th>Headcount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {distribution.map((bucket, index) => (
-            <tr key={index}>
-              <td>{rangeLabels[index]}</td>
-              <td>{bucket.count}</td>
+      {/* The clipping styles go on this wrapping div, not the <table>
+          itself: a <table>'s caption is laid out in the table's anonymous
+          wrapper box, which CSS overflow/clipping does not reach the way it
+          reaches a <table> element's own box -- forcing width/height/
+          overflow onto the table directly left the caption (and the table's
+          own auto-layout content width) poking out past the clip, widening
+          the page by exactly the hidden content's width. A table shrinks
+          and clips the way a div does only when something *else* clips it. */}
+      <Box sx={visuallyHiddenSx}>
+        <table>
+          <caption>Salary distribution for {groupLabel}</caption>
+          <thead>
+            <tr>
+              <th>Range</th>
+              <th>Headcount</th>
             </tr>
-          ))}
-        </tbody>
+          </thead>
+          <tbody>
+            {distribution.map((bucket, index) => (
+              <tr key={index}>
+                <td>{rangeLabels[index]}</td>
+                <td>{bucket.count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Box>
       <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
         Each range includes its lower bound and excludes its upper bound, except the last, which
