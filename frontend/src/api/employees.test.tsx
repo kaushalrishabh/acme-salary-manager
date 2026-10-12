@@ -1,5 +1,8 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { renderHook, waitFor } from '@testing-library/react'
 import { HttpResponse, http } from 'msw'
-import { describe, expect, it } from 'vitest'
+import type { ReactNode } from 'react'
+import { describe, expect, it, vi } from 'vitest'
 
 import { API_BASE_URL } from '../test/handlers'
 import { server } from '../test/server'
@@ -8,6 +11,9 @@ import {
   createEmployee,
   deleteEmployee,
   updateEmployee,
+  useCreateEmployee,
+  useDeleteEmployee,
+  useUpdateEmployee,
 } from './employees'
 
 const writeBody = {
@@ -146,5 +152,65 @@ describe('deleteEmployee', () => {
     await deleteEmployee(1)
 
     expect(capturedMethod).toBe('DELETE')
+  })
+})
+
+describe('write mutations invalidate employees/employee-options/insights', () => {
+  function renderWithSpy() {
+    const queryClient = new QueryClient()
+    const spy = vi.spyOn(queryClient, 'invalidateQueries')
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    return { wrapper, spy }
+  }
+
+  function invalidatedQueryKeys(spy: ReturnType<typeof vi.spyOn>): unknown[] {
+    return spy.mock.calls.map(
+      (call: unknown[]) => (call[0] as { queryKey?: unknown[] })?.queryKey?.[0],
+    )
+  }
+
+  it('useCreateEmployee invalidates all three on success', async () => {
+    server.use(
+      http.post(`${API_BASE_URL}/employees`, () => HttpResponse.json({ id: 1 }, { status: 201 })),
+    )
+    const { wrapper, spy } = renderWithSpy()
+    const { result } = renderHook(() => useCreateEmployee(), { wrapper })
+
+    result.current.mutate(writeBody)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(invalidatedQueryKeys(spy)).toEqual(
+      expect.arrayContaining(['employees', 'employee-options', 'insights']),
+    )
+  })
+
+  it('useUpdateEmployee invalidates all three on success', async () => {
+    server.use(http.put(`${API_BASE_URL}/employees/1`, () => HttpResponse.json({ id: 1 })))
+    const { wrapper, spy } = renderWithSpy()
+    const { result } = renderHook(() => useUpdateEmployee(), { wrapper })
+
+    result.current.mutate({ id: 1, data: writeBody })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(invalidatedQueryKeys(spy)).toEqual(
+      expect.arrayContaining(['employees', 'employee-options', 'insights']),
+    )
+  })
+
+  it('useDeleteEmployee invalidates all three on success', async () => {
+    server.use(
+      http.delete(`${API_BASE_URL}/employees/1`, () => new HttpResponse(null, { status: 204 })),
+    )
+    const { wrapper, spy } = renderWithSpy()
+    const { result } = renderHook(() => useDeleteEmployee(), { wrapper })
+
+    result.current.mutate(1)
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(invalidatedQueryKeys(spy)).toEqual(
+      expect.arrayContaining(['employees', 'employee-options', 'insights']),
+    )
   })
 })
