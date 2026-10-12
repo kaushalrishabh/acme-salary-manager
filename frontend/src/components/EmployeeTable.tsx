@@ -1,4 +1,6 @@
+import AddIcon from '@mui/icons-material/Add'
 import ClearIcon from '@mui/icons-material/Clear'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import {
   Alert,
   Autocomplete,
@@ -8,6 +10,8 @@ import {
   Grid,
   IconButton,
   InputAdornment,
+  Menu,
+  MenuItem,
   Paper,
   Skeleton,
   Table,
@@ -21,23 +25,25 @@ import {
   TextField,
 } from '@mui/material'
 import { tablePaginationClasses } from '@mui/material/TablePagination'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, MouseEvent } from 'react'
 import { useState } from 'react'
 
 import { useEmployeeOptions, useEmployees } from '../api/employees'
+import { useAuth } from '../auth/useAuth'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { useSlowRequest } from '../hooks/useSlowRequest'
-import type { EmployeeSortField, SortOrder } from '../types/employee'
+import type { Employee, EmployeeSortField, SortOrder } from '../types/employee'
 import { formatCountryName } from '../utils/country'
 import { formatDateOnly } from '../utils/date'
 import { formatMoney } from '../utils/money'
 import { muiPageToApiPage } from '../utils/pagination'
+import { DeleteEmployeeDialog } from './DeleteEmployeeDialog'
+import { EmployeeFormDialog } from './EmployeeFormDialog'
 
 const DEFAULT_SORT: EmployeeSortField = 'full_name'
 const DEFAULT_ORDER: SortOrder = 'asc'
 const ALL_VALUE = ''
 const SKELETON_ROW_COUNT = 5
-const COLUMN_COUNT = 8
 const TABLE_MAX_HEIGHT = 560
 
 // Sticky left column (the Name header/cells) so it stays visible while the
@@ -72,16 +78,21 @@ const ellipsisSx = {
 
 // Column width budget at lg (1200px) and up, where table-layout switches
 // to fixed (see the Table's sx below) -- see design-notes.md for how each
-// percentage was estimated. Sums to 99%, intentionally under 100%.
+// percentage was estimated and re-tuned to make room for Actions. Sums to
+// 99% including Actions (99% assumes Actions is rendered, i.e. logged in;
+// logged out, these same percentages sum to 94%, leaving a harmless 6% of
+// unused width at the table's right edge rather than maintaining two
+// separate budgets for a cosmetic difference).
 const COLUMN_WIDTH_LG = {
-  name: '12%',
-  email: '19%',
-  jobTitle: '17%',
-  department: '10%',
-  country: '12%',
+  name: '11%',
+  email: '18%',
+  jobTitle: '16%',
+  department: '9%',
+  country: '11%',
   salary: '10%',
   salaryUsd: '10%',
   hireDate: '9%',
+  actions: '5%',
 }
 
 // Below lg, table-layout is auto and the table scrolls horizontally inside
@@ -124,8 +135,50 @@ const salaryUsdColumnSx = {
 // inline-flex element -- more robust across browsers, especially for the
 // sticky-positioned Name column.
 const sortLabelSx = { width: '100%', justifyContent: 'center' as const }
+const actionsCellSx = { ...nowrapSx, width: { lg: COLUMN_WIDTH_LG.actions } }
+
+interface MenuState {
+  anchorEl: HTMLElement
+  employee: Employee
+}
 
 export function EmployeeTable() {
+  const { isLoggedIn } = useAuth()
+  const columnCount = isLoggedIn ? 9 : 8
+
+  const [menuState, setMenuState] = useState<MenuState | null>(null)
+  const [formDialog, setFormDialog] = useState<{ open: boolean; employee?: Employee }>({
+    open: false,
+  })
+  const [deleteDialog, setDeleteDialog] = useState<{ open: boolean; employee: Employee | null }>({
+    open: false,
+    employee: null,
+  })
+
+  function handleOpenMenu(event: MouseEvent<HTMLElement>, employee: Employee) {
+    setMenuState({ anchorEl: event.currentTarget, employee })
+  }
+
+  function handleCloseMenu() {
+    setMenuState(null)
+  }
+
+  function handleAddClick() {
+    setFormDialog({ open: true, employee: undefined })
+  }
+
+  function handleEditClick() {
+    if (!menuState) return
+    setFormDialog({ open: true, employee: menuState.employee })
+    setMenuState(null)
+  }
+
+  function handleDeleteClick() {
+    if (!menuState) return
+    setDeleteDialog({ open: true, employee: menuState.employee })
+    setMenuState(null)
+  }
+
   const [searchInput, setSearchInput] = useState('')
   const debouncedSearch = useDebouncedValue(searchInput, 300)
 
@@ -283,6 +336,14 @@ export function EmployeeTable() {
         </Grid>
       </Paper>
 
+      {isLoggedIn && (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddClick}>
+            Add employee
+          </Button>
+        </Box>
+      )}
+
       {isSlow && (
         <Alert severity="info" sx={{ mb: 2 }}>
           Waking up the server, this can take up to a minute on first load.
@@ -370,13 +431,18 @@ export function EmployeeTable() {
                     Hire date
                   </TableSortLabel>
                 </TableCell>
+                {isLoggedIn && (
+                  <TableCell align="center" sx={actionsCellSx}>
+                    Actions
+                  </TableCell>
+                )}
               </TableRow>
             </TableHead>
             <TableBody>
               {employeesQuery.isPending &&
                 Array.from({ length: SKELETON_ROW_COUNT }).map((_, rowIndex) => (
                   <TableRow key={rowIndex}>
-                    {Array.from({ length: COLUMN_COUNT }).map((_, cellIndex) => (
+                    {Array.from({ length: columnCount }).map((_, cellIndex) => (
                       <TableCell key={cellIndex}>
                         <Skeleton />
                       </TableCell>
@@ -386,7 +452,7 @@ export function EmployeeTable() {
 
               {employeesQuery.isSuccess && employees.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={COLUMN_COUNT} align="center">
+                  <TableCell colSpan={columnCount} align="center">
                     No employees match
                   </TableCell>
                 </TableRow>
@@ -426,6 +492,17 @@ export function EmployeeTable() {
                   <TableCell align="center" sx={hireDateCellSx}>
                     {formatDateOnly(employee.hire_date)}
                   </TableCell>
+                  {isLoggedIn && (
+                    <TableCell align="center" sx={actionsCellSx}>
+                      <IconButton
+                        aria-label={`Actions for ${employee.full_name}`}
+                        size="small"
+                        onClick={(event) => handleOpenMenu(event, employee)}
+                      >
+                        <MoreVertIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -454,6 +531,22 @@ export function EmployeeTable() {
           }}
         />
       </Paper>
+
+      <Menu anchorEl={menuState?.anchorEl} open={menuState !== null} onClose={handleCloseMenu}>
+        <MenuItem onClick={handleEditClick}>Edit</MenuItem>
+        <MenuItem onClick={handleDeleteClick}>Delete</MenuItem>
+      </Menu>
+
+      <EmployeeFormDialog
+        open={formDialog.open}
+        employee={formDialog.employee}
+        onClose={() => setFormDialog({ open: false })}
+      />
+      <DeleteEmployeeDialog
+        open={deleteDialog.open}
+        employee={deleteDialog.employee}
+        onClose={() => setDeleteDialog({ open: false, employee: null })}
+      />
     </Box>
   )
 }
