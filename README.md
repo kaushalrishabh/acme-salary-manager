@@ -208,7 +208,9 @@ fails for the right reason before the implementation lands, and a
 separate Claude chat reviewing designs, reports, and (for the frontend,
 which Claude Code can't see rendered) my own screenshots. The full
 session-by-session log, including corrections, rejected suggestions, and
-what I learned from each one, is in [docs/ai-log.md](docs/ai-log.md).
+what I learned from each one, is in [docs/ai-log.md](docs/ai-log.md). The
+prompts themselves, skimmable in a few minutes, are in
+[docs/prompts.md](docs/prompts.md).
 
 ## Known limitations and next steps
 
