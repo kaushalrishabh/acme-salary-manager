@@ -1012,6 +1012,82 @@ shown alongside whatever else is rendering (skeleton, error, or data),
 the same structure `EmployeeTable` already uses, since a slow *refetch*
 (switching tabs, Retry) can hit this too, not just the first load.
 
+## S7 walkthrough fixes
+
+Four items from a manual walkthrough of the deployed/local app after S7.
+
+**1. Salary decimals (422 field mapping) -- no reproduction found.** The
+walkthrough reported that a salary with too many decimal places (e.g.
+`6500000.505` for a JPY employee, which the backend correctly rejects
+with a 422) showed no field error in the browser and appeared to save.
+Reading `EmployeeFormDialog`/`mapApiErrorToFields`/`apiFetch` end to end
+found no trimming, rounding, or reformatting of the typed value, and the
+422-to-field mapping is generic (`loc[1]` -> field name) rather than
+salary-specific. A new MSW test pins the exact reported scenario
+(country JP, `"6500000.505"`, the server's real `"too many decimal
+places (at most 0 allowed)"` message) and passes against the existing
+code unchanged: the request body carries the string exactly as typed,
+and the error lands on the Salary field with the dialog staying open.
+No code change made. The likely explanation is the walkthrough hit a
+build that predates this code (e.g. the deployed frontend before a
+redeploy) rather than a live bug -- flagged to re-test once confirmed
+current, since the original report didn't say which value was actually
+saved.
+
+**2. Session expiry -- already correct, now actually covered.** Existing
+coverage called `notifySessionExpired()` directly, proving the
+redirect/message plumbing but not that a real write's 401 response
+triggers it. Added: a write (delete) that 401s clears the token, shows
+"Session expired, please log in again", and returns to the originating
+page after re-login; and the same flow for a token that was already
+present when the app started (standing in for one restored from
+`sessionStorage` -- `authStore`'s own unit tests already prove that
+hydration path produces the identical in-memory value, so there's
+nothing `apiFetch`/`getToken()` could tell apart) and turns out to be
+rejected on the first write. Both pass unchanged; no fix needed.
+
+**3. Insights page layout -- flex children missing `minWidth: 0`, plus
+an unnecessary legend.** `InsightsTabContent` wraps the summary table
+and the chart in a `display: flex, flexDirection: column` container.
+Neither child declared `minWidth: 0`, which is MUI X Charts' own
+documented requirement for a flex/grid-hosted chart to size down to its
+container instead of measuring (and rendering) at its unconstrained
+content width -- the known mechanism for a chart forcing the whole page
+to scroll horizontally instead of shrinking. Added `minWidth: 0` to the
+chart's wrapping `Box` and to `InsightsSummaryTable`'s `TableContainer`
+(the table already had its own escape valve via `TableContainer`'s
+built-in `overflow-x: auto`, which is what should produce the one
+allowed horizontal scrollbar, inside the card, at 390px). Also hid the
+chart's legend (`hideLegend`): with exactly one series, a color-keyed
+"Headcount" legend repeats what the caption/accessible table already
+say and was claiming extra vertical space for nothing. Checked and
+ruled out, by reading the source rather than guessing: no fixed-pixel
+chart width (the `BarChart` only sets `height`, leaving width to the
+parent-measurement behavior its own prop docs describe), no `100vw`
+anywhere in the frontend, no MUI `Grid` on this page (the employee
+table's filter row is the only `Grid` usage in the app), no nested
+`maxHeight`/scroll container (the `calc(100vh - 320px)` height cap is
+local to `EmployeeTable` and was never applied here). This project has
+no browser/e2e tooling (Vitest + jsdom only), so none of this could be
+visually confirmed -- the `minWidth: 0` fix is the documented one for
+exactly this symptom, but it needs a real-browser check at 1280/1440/
+1920/390px to confirm the horizontal scrollbar is actually gone.
+
+**4. Read-only clarity.** Logged out, an info `Alert` above the employee
+filters ("You're viewing in read-only mode. Log in to add, edit or
+delete employees.") carries its own Login link, and the `AppBar`'s
+Login switched from a plain inherited-color button to `variant=
+"contained"` -- the Add/Edit/Delete affordances were already
+login-gated, but nothing on the page said so before you went looking
+for them. Logged in: the alert disappears and a small "Logged in"
+`Chip` sits next to Logout, so the two states are visually distinct at
+a glance, not just by which buttons happen to be present. The existing
+return-to-the-prior-page-after-login behavior is unchanged. The read-
+only `Alert`'s own Login link needed `EmployeeTable`'s tests wrapped in
+a `MemoryRouter` for the first time (a `react-router` `Link`, unlike
+the dialogs this component already rendered, needs a router context
+even in isolation).
+
 ## Open items
 
 - Exact salary-limit values per currency for the input schema (JPY's
